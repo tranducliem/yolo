@@ -125,6 +125,13 @@ export default function LP() {
 
       {/* ── S1: Hero ── */}
       <section className="relative flex flex-col items-center justify-center px-4 text-center bg-gradient-to-b from-[#F0FDFB] via-white to-[#F0FDFB] overflow-hidden min-h-[100svh] md:min-h-screen">
+        {/* Login link - top right */}
+        <div className="absolute top-4 right-4 z-20">
+          <Link href="/signup" className="text-sm text-gray-500 hover:text-accent transition-colors">
+            ログイン
+          </Link>
+        </div>
+
         {/* Floating blob decorations - hidden on mobile for cleaner look */}
         <div className="hidden md:block">
           <div className="absolute -top-20 -left-20 w-72 h-72 rounded-full bg-accent opacity-[0.07] blur-3xl pointer-events-none" style={{ animation: 'blob1 12s ease-in-out infinite' }} />
@@ -394,8 +401,44 @@ export default function LP() {
             無料で試してみる
           </Link>
           <p className="text-gray-400 text-sm mt-4">📱 App Storeで近日公開</p>
-          <div className="mt-12 pt-8 border-t border-white/10 text-gray-500 text-xs space-y-1">
-            <p>yolo.jp | GXO株式会社 | プライバシーポリシー | 利用規約</p>
+
+          {/* Sitemap links */}
+          <div className="mt-12 pt-8 border-t border-white/10 max-w-xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-left mb-10">
+              {/* Column 1 */}
+              <div>
+                <p className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-wider">YOLOを体験する</p>
+                <div className="space-y-2">
+                  <Link href="/try" className="block text-sm text-gray-500 hover:text-accent transition-colors">✨ ベストショットAI</Link>
+                  <Link href="/home" className="block text-sm text-gray-500 hover:text-accent transition-colors">🏠 ホーム</Link>
+                  <Link href="/mypage" className="block text-sm text-gray-500 hover:text-accent transition-colors">🐾 マイページ</Link>
+                  <Link href="/donation" className="block text-sm text-gray-500 hover:text-accent transition-colors">🌟 寄付活動</Link>
+                  <Link href="/ambassador" className="block text-sm text-gray-500 hover:text-accent transition-colors">👑 アンバサダー</Link>
+                  <Link href="/subscription" className="block text-sm text-gray-500 hover:text-accent transition-colors">💎 プラン</Link>
+                </div>
+              </div>
+              {/* Column 2 */}
+              <div>
+                <p className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-wider">グッズ・サービス</p>
+                <div className="space-y-2">
+                  <Link href="/goods" className="block text-sm text-gray-500 hover:text-accent transition-colors">🎁 グッズ</Link>
+                  <Link href="/book" className="block text-sm text-gray-500 hover:text-accent transition-colors">📖 フォトブック</Link>
+                  <Link href="/studio" className="block text-sm text-gray-500 hover:text-accent transition-colors">🎨 Studio</Link>
+                </div>
+              </div>
+              {/* Column 3 */}
+              <div>
+                <p className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-wider">コミュニティ</p>
+                <div className="space-y-2">
+                  <Link href="/explore" className="block text-sm text-gray-500 hover:text-accent transition-colors">🔍 Explore</Link>
+                  <Link href="/ranking" className="block text-sm text-gray-500 hover:text-accent transition-colors">🔥 ランキング</Link>
+                  <Link href="/battle" className="block text-sm text-gray-500 hover:text-accent transition-colors">⚔️ Battle</Link>
+                </div>
+              </div>
+            </div>
+            <div className="text-gray-500 text-xs space-y-1">
+              <p>yolo.jp | GXO株式会社 | プライバシーポリシー | 利用規約</p>
+            </div>
           </div>
         </div>
       </section>
