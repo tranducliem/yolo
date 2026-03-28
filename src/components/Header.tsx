@@ -47,7 +47,9 @@ export default function Header() {
       {/* Sticky header */}
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          show ? "bg-white/90 backdrop-blur-md shadow-sm translate-y-0" : "-translate-y-full"
+          show
+            ? "bg-white/90 backdrop-blur-md shadow-sm translate-y-0"
+            : "translate-y-0 bg-white/90 backdrop-blur-md shadow-sm lg:-translate-y-full"
         }`}
       >
         <div className="max-w-4xl mx-auto flex items-center justify-between px-4 h-14">
