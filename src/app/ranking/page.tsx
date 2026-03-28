@@ -5,12 +5,11 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
-import RankingCard from "@/components/RankingCard";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import { ToastProvider, useToast } from "@/components/Toast";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import { ToastProvider, useToast } from "@/components/ui/Toast";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 const cats = [
   { id: "total", l: "🏆総合" },

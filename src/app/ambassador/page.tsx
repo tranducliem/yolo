@@ -9,10 +9,10 @@ import {
   mockLegends,
 } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthGate from "@/components/AuthGate";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthGate from "@/components/features/auth/AuthGate";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 /* ── Region grouping ── */
 const regionOrder = ["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州"];

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 const links = [
   { href: "/home", icon: "🏠", label: "ホーム" },

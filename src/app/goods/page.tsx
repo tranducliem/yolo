@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { goods2D, goods3D } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import ProductMockup from "@/components/ProductMockup";
-import type { MockupType } from "@/components/ProductMockup";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import ProductMockup from "@/components/features/shop/ProductMockup";
+import type { MockupType } from "@/components/features/shop/ProductMockup";
 
 type Category = "2d" | "3d";
 

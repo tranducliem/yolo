@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockPets, availableTags, donationTags } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthGate from "@/components/AuthGate";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import { useToast } from "@/components/Toast";
+import AuthGate from "@/components/features/auth/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import { useToast } from "@/components/ui/Toast";
 
 const me = mockPets[0];
 const visibilityOptions = [
@@ -27,7 +27,7 @@ export default function PostPage() {
 
 function PostInner() {
   const router = useRouter();
-  const { user } = useAuth();
+  useAuth();
   const toast = useToast();
   const [photo, setPhoto] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
@@ -42,7 +42,7 @@ function PostInner() {
 
   // Confetti particles
   const [particles, setParticles] = useState<
-    { id: number; x: number; y: number; color: string; delay: number }[]
+    { id: number; x: number; y: number; color: string; delay: number; rotate: number }[]
   >([]);
 
   const handlePost = () => {
@@ -66,6 +66,7 @@ function PostInner() {
       y: -(Math.random() * 200 + 100),
       color: colors[i % colors.length],
       delay: Math.random() * 0.5,
+      rotate: Math.random() * 720,
     }));
     setParticles(newParticles);
 
@@ -393,7 +394,7 @@ function PostInner() {
                     x: p.x * 3,
                     y: [0, p.y, p.y + 200],
                     scale: [1, 1.2, 0.5],
-                    rotate: Math.random() * 720,
+                    rotate: p.rotate,
                   }}
                   transition={{
                     duration: 2,

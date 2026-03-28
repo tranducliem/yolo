@@ -4,10 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockBattles, mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthModal from "@/components/AuthModal";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthModal from "@/components/features/auth/AuthModal";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 type TabId = "vote" | "results" | "bracket";
 

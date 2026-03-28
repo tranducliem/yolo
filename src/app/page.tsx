@@ -4,11 +4,11 @@ import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useInView, AnimatePresence } from "framer-motion";
-import { mockPets, mockPosts, testimonials } from "@/lib/mockData";
+import { mockPets, mockPosts } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import Header from "@/components/Header";
-import EmotionButtons from "@/components/EmotionButtons";
-import FloatingCTA from "@/components/FloatingCTA";
+import Header from "@/components/layout/Header";
+import EmotionButtons from "@/components/features/social/EmotionButtons";
+import FloatingCTA from "@/components/ui/FloatingCTA";
 
 // ── Counter animation ──
 function Counter({ end, suffix = "" }: { end: number; suffix?: string }) {

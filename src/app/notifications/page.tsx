@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockNotifications, type MockNotification } from "@/lib/mockData";
+import { mockNotifications } from "@/lib/mockData";
+import type { MockNotification } from "@/types";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthGate from "@/components/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthGate from "@/components/features/auth/AuthGate";
 
 type TabId = "all" | "like" | "follow" | "system" | "donation";
 

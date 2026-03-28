@@ -44,13 +44,14 @@ export default function SubscriptionAdminPage() {
   // SVG donut chart calculations
   const donutRadius = 70;
   const donutCircumference = 2 * Math.PI * donutRadius;
-  let donutOffset = 0;
-  const donutSegments = planDist.map((p) => {
+  const donutSegments = planDist.reduce<
+    (typeof planDist[number] & { offset: number; length: number })[]
+  >((acc, p) => {
+    const offset = acc.reduce((sum, seg) => sum + seg.length, 0);
     const segmentLength = (p.pct / 100) * donutCircumference;
-    const segment = { ...p, offset: donutOffset, length: segmentLength };
-    donutOffset += segmentLength;
-    return segment;
-  });
+    acc.push({ ...p, offset, length: segmentLength });
+    return acc;
+  }, []);
 
   const maxNewSub = Math.max(...monthlySubData.map((d) => d.newSub));
 

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
-import FullScreenMenu from "@/components/FullScreenMenu";
+import AuthModal from "@/components/features/auth/AuthModal";
+import FullScreenMenu from "@/components/layout/FullScreenMenu";
 
 const HIDDEN_ALWAYS = ["/", "/try", "/analyzing", "/results", "/signup"];
 const GUEST_VISIBLE = ["/explore", "/ranking", "/pet"];

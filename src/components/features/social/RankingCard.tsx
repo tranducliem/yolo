@@ -1,6 +1,6 @@
 "use client";
 
-import type { MockPet } from "@/lib/mockData";
+import type { MockPet } from "@/types";
 
 export default function RankingCard({ pet, rank }: { pet: MockPet; rank: number }) {
   const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;

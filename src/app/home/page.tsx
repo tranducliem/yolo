@@ -6,17 +6,17 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { mockPets, mockPosts, mockDares } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import EmotionButtons from "@/components/EmotionButtons";
-import AuthModal from "@/components/AuthModal";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import DonationBadge from "@/components/DonationBadge";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
-import { useToast } from "@/components/Toast";
+import EmotionButtons from "@/components/features/social/EmotionButtons";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import DonationBadge from "@/components/features/donation/DonationBadge";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
+import { useToast } from "@/components/ui/Toast";
 
 export default function HomePage() {
   const router = useRouter();
-  const { isLoggedIn, loaded, user } = useAuth();
+  const { isLoggedIn, loaded } = useAuth();
   const toast = useToast();
   const [emoCount, setEmoCount] = useState(12847);
   const [authTrigger, setAuthTrigger] = useState<string | null>(null);

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
+import AuthModal from "@/components/features/auth/AuthModal";
 
 interface Props {
   emotions: { happy: number; funny: number; touched: number; crying: number };

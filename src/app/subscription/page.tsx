@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { mockPlans, ambassadorRanks } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthModal from "@/components/AuthModal";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
-import { useToast } from "@/components/Toast";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthModal from "@/components/features/auth/AuthModal";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
+import { useToast } from "@/components/ui/Toast";
 
 function formatPrice(price: number): string {
   return price === 0 ? "¥0" : `¥${price.toLocaleString()}`;
@@ -23,7 +23,8 @@ export default function SubscriptionPage() {
   const [authModal, setAuthModal] = useState(false);
   const currentPlan = user?.plan || "free";
 
-  const handleSelect = (planId: string) => {
+  const handleSelect = (_planId: string) => {
+    void _planId;
     if (!isLoggedIn) {
       setAuthModal(true);
       return;

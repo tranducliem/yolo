@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import FullScreenMenu from "@/components/FullScreenMenu";
+import FullScreenMenu from "@/components/layout/FullScreenMenu";
 
 export default function Header() {
   const [show, setShow] = useState(false);

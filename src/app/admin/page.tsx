@@ -30,7 +30,7 @@ const pmfMetrics = [
 
 export default function AdminDashboard() {
   const [events, setEvents] = useState<string[]>([realtimeEvents[0]]);
-  const [eventIndex, setEventIndex] = useState(1);
+  const [, setEventIndex] = useState(1);
 
   useEffect(() => {
     const interval = setInterval(() => {

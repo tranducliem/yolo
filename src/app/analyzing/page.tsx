@@ -33,6 +33,7 @@ function TypewriterText({ text }: { text: string }) {
   const indexRef = useRef(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven state update
     setDisplayed("");
     indexRef.current = 0;
     const interval = setInterval(() => {
@@ -89,6 +90,7 @@ export default function AnalyzingPage() {
 
     const name = sessionStorage.getItem("yolo_pet_name");
     if (!name) { router.push("/try"); return; }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing from sessionStorage
     setPetName(name);
 
     // Load previews for marquee display

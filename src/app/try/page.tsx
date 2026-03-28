@@ -65,11 +65,11 @@ export default function TryPage() {
 
   useEffect(() => {
     if (!isLoggedIn && getTryCount() >= 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing from external check
       setShowBlock(true);
     }
   }, [isLoggedIn, getTryCount]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     return () => {
       photos.forEach((p) => {

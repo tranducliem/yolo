@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import type { CartItem } from "@/lib/mockData";
-import AuthGate from "@/components/AuthGate";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
+import type { CartItem } from "@/types";
+import AuthGate from "@/components/features/auth/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
 
 function CartContent() {
   const { loaded, getCart, updateCartQuantity, removeFromCart } = useAuth();
@@ -21,6 +21,7 @@ function CartContent() {
   }, [getCart]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing cart from external storage
     if (loaded) syncCart();
   }, [loaded, syncCart]);
 

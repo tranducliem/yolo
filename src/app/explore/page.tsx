@@ -6,13 +6,13 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockPosts, exploreCategories } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import EmotionButtons from "@/components/EmotionButtons";
-import DonationBadge from "@/components/DonationBadge";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
-import AuthModal from "@/components/AuthModal";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import FloatingCTA from "@/components/FloatingCTA";
+import EmotionButtons from "@/components/features/social/EmotionButtons";
+import DonationBadge from "@/components/features/donation/DonationBadge";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import FloatingCTA from "@/components/ui/FloatingCTA";
 
 type Mode = "grid" | "feed";
 

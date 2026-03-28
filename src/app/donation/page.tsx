@@ -12,11 +12,11 @@ import {
   mockPersonalDonation,
 } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthGate from "@/components/AuthGate";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
-import DonationBadge from "@/components/DonationBadge";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthGate from "@/components/features/auth/AuthGate";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
+import DonationBadge from "@/components/features/donation/DonationBadge";
 
 type RankingTab = "monthly" | "total" | "region";
 
@@ -34,12 +34,12 @@ function DonationPieChart() {
     { label: "施設", pct: 10, color: "#0D1B2A" },
   ];
   // conic-gradient
-  let acc = 0;
-  const stops = segments.map((s) => {
-    const start = acc;
-    acc += s.pct;
-    return `${s.color} ${start}% ${acc}%`;
-  });
+  const stops = segments.reduce<string[]>((result, s, i) => {
+    const start = segments.slice(0, i).reduce((sum, seg) => sum + seg.pct, 0);
+    const end = start + s.pct;
+    result.push(`${s.color} ${start}% ${end}%`);
+    return result;
+  }, []);
 
   return (
     <div className="flex items-center gap-4">

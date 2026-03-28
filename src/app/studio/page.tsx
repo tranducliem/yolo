@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockPets, studioStyles } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
 
 const me = mockPets[0];
 
@@ -26,6 +26,7 @@ export default function StudioPage() {
 
   useEffect(() => {
     if (processing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven state update
       setProgress(0);
       const interval = setInterval(() => {
         setProgress((p) => {

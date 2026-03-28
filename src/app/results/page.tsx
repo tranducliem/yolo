@@ -4,9 +4,9 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { generateShareImage } from "@/lib/generateShareImage";
+import { generateShareImage } from "@/lib/share";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
+import AuthModal from "@/components/features/auth/AuthModal";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,13 +59,13 @@ function ScoreRow({ item, size = "base" }: { item: DisplayResult; size?: "base" 
 }
 
 function GoldParticles() {
-  const particles = useRef(
+  const [particles] = useState(() =>
     Array.from({ length: 12 }, (_, i) => {
       const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.5;
       const distance = 120 + Math.random() * 100;
       return { id: i, x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, delay: Math.random() * 0.3 };
     })
-  ).current;
+  );
 
   return (
     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
@@ -87,8 +87,9 @@ function GoldParticles() {
 function TypewriterText({ text, speed = 50, onComplete }: { text: string; speed?: number; onComplete?: () => void }) {
   const [charCount, setCharCount] = useState(0);
   const onCompleteRef = useRef(onComplete);
-  onCompleteRef.current = onComplete;
+  useEffect(() => { onCompleteRef.current = onComplete; });
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting on text prop change
   useEffect(() => { setCharCount(0); }, [text]);
 
   useEffect(() => {
@@ -162,6 +163,7 @@ export default function ResultsPage() {
       const apiResults: ApiResult[] = JSON.parse(resultsJson);
       const previews: string[] = JSON.parse(previewsJson);
       const pName = name || "ペット";
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing from sessionStorage
       setPetName(pName);
 
       // Convert API results → display results with real photos
@@ -190,6 +192,7 @@ export default function ResultsPage() {
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "countdown") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven phase transition
     if (countdownNumber <= 0) { setPhase("first"); return; }
     const timer = setTimeout(() => setCountdownNumber((c) => c - 1), 1000);
     return () => clearTimeout(timer);
@@ -200,6 +203,7 @@ export default function ResultsPage() {
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "first") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven state update
     setBgColor("#0D1B2A");
     const t1 = setTimeout(() => setShowFirstTitle(true), 300);
     const t2 = setTimeout(() => setShowFirstPhoto(true), 800);
@@ -232,6 +236,7 @@ export default function ResultsPage() {
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "cta") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven state update
     setBgColor("#FFFFFF");
     const t1 = setTimeout(() => setShowDonationCard(true), 500);
     const t2 = setTimeout(() => setShowCtaButtons(true), 1200);

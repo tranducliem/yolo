@@ -6,9 +6,9 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AuthGate from "@/components/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AuthGate from "@/components/features/auth/AuthGate";
 
 /* ── Toggle Switch ── */
 function Toggle({

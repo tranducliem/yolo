@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { mockOrders } from "@/lib/mockData";
-import AuthGate from "@/components/AuthGate";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import DonationBadge from "@/components/DonationBadge";
+import AuthGate from "@/components/features/auth/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import DonationBadge from "@/components/features/donation/DonationBadge";
 
 type TabKey = "all" | "shipping" | "completed" | "cancelled";
 

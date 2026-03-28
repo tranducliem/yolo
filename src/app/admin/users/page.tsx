@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockAdminUsers, ambassadorRanks, type MockAdminUser } from "@/lib/mockData";
+import { mockAdminUsers, ambassadorRanks } from "@/lib/mockData";
+import type { MockAdminUser } from "@/types";
 
 const planLabel: Record<MockAdminUser["plan"], string> = {
   free: "Free",

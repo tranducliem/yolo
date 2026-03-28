@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockPets, photobooks } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthModal from "@/components/AuthModal";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import ProductMockup from "@/components/ProductMockup";
-import type { MockupType } from "@/components/ProductMockup";
+import AuthModal from "@/components/features/auth/AuthModal";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import ProductMockup from "@/components/features/shop/ProductMockup";
+import type { MockupType } from "@/components/features/shop/ProductMockup";
 
 const me = mockPets[0];
 

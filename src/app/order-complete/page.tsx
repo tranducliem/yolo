@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
 
 // Confetti particle component (40 particles)
 function Confetti() {

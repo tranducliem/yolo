@@ -6,10 +6,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { mockPets, ambassadorRanks } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
-import AuthGate from "@/components/AuthGate";
-import BottomNav from "@/components/BottomNav";
-import SideNav from "@/components/SideNav";
-import AmbassadorBadge from "@/components/AmbassadorBadge";
+import AuthGate from "@/components/features/auth/AuthGate";
+import BottomNav from "@/components/layout/BottomNav";
+import SideNav from "@/components/layout/SideNav";
+import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 const me = mockPets[0];
 
