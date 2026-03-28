@@ -6,26 +6,24 @@ import Link from "next/link";
 import BottomNav from "@/components/layout/BottomNav";
 import SideNav from "@/components/layout/SideNav";
 
-// Confetti particle component (40 particles)
+// Confetti particle component (40 particles) — client-only to avoid hydration mismatch
 function Confetti() {
-  const [particles] = useState(() =>
-    Array.from({ length: 40 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      delay: Math.random() * 0.5,
-      duration: 2 + Math.random() * 2,
-      color: [
-        "#2A9D8F",
-        "#E9C46A",
-        "#F4A261",
-        "#E76F51",
-        "#264653",
-        "#FF6B9D",
-      ][i % 6],
-      size: 6 + Math.random() * 8,
-      rotation: Math.random() * 360,
-    }))
-  );
+  const [particles, setParticles] = useState<{ id: number; x: number; delay: number; duration: number; color: string; size: number; rotation: number }[]>([]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only particle generation
+    setParticles(
+      Array.from({ length: 40 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        delay: Math.random() * 0.5,
+        duration: 2 + Math.random() * 2,
+        color: ["#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#264653", "#FF6B9D"][i % 6],
+        size: 6 + Math.random() * 8,
+        rotation: Math.random() * 360,
+      }))
+    );
+  }, []);
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-10">

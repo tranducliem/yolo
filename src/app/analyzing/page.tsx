@@ -16,6 +16,7 @@ interface Particle {
 }
 
 function generateParticles(): Particle[] {
+  if (typeof window === "undefined") return []; // Skip on SSR to avoid hydration mismatch
   return Array.from({ length: 8 }, (_, i) => ({
     id: i,
     x: Math.random() * 100,
@@ -69,7 +70,7 @@ export default function AnalyzingPage() {
   const animDone = useRef(false);
   const navigating = useRef(false);
   const started = useRef(false);
-  const particles = useMemo(() => generateParticles(), []);
+  const [particles] = useState(() => generateParticles());
 
   const checkAndNavigate = () => {
     if (apiDone.current && animDone.current && !navigating.current) {
