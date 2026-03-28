@@ -1,34 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const maxDuration = 60; // Vercel timeout 60s
+
 export async function POST(request: NextRequest) {
   try {
-    const { photos, petName } = await request.json();
+    const body = await request.json();
+    const { photos, petName } = body;
+
+    if (!photos || photos.length < 1) {
+      return NextResponse.json({ success: false, error: 'No photos provided' }, { status: 400 });
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-      console.log('ANTHROPIC_API_KEY not set. Returning mock results.');
+      console.log('No ANTHROPIC_API_KEY — returning mock results');
       return NextResponse.json({
         success: true,
         mode: 'mock',
-        results: generateMockResults(photos.length, petName),
+        results: generateMockResults(photos.length, petName || 'ペット'),
       });
     }
 
-    const results = await analyzeWithClaude(photos, petName, apiKey);
+    // Claude Vision APIで分析
+    const results = await analyzeWithClaude(photos, petName || 'ペット', apiKey);
+
     return NextResponse.json({
       success: true,
       mode: 'live',
       results,
     });
-
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Analysis error:', message);
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    console.error('Analyze error:', error);
+    // エラー時もモックで返す（デモが止まらないように）
+    return NextResponse.json({
+      success: true,
+      mode: 'mock',
+      results: generateMockResults(5, 'ペット'),
+    });
   }
 }
 
@@ -37,20 +46,22 @@ async function analyzeWithClaude(
   petName: string,
   apiKey: string
 ) {
-  const imageContents = photos.map((photo, index) => ([
-    {
-      type: "image" as const,
+  // 写真をClaude Vision APIに送信（最大20枚を1リクエストで）
+  const imageContents: { type: string; source?: { type: string; media_type: string; data: string }; text?: string }[] = [];
+  photos.forEach((photo, index) => {
+    imageContents.push({
+      type: "image",
       source: {
-        type: "base64" as const,
-        media_type: photo.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+        type: "base64",
+        media_type: (photo.type || 'image/jpeg'),
         data: photo.base64,
       },
-    },
-    {
-      type: "text" as const,
-      text: `Photo ${index + 1}: "${photo.name}"`,
-    },
-  ])).flat();
+    });
+    imageContents.push({
+      type: "text",
+      text: `Photo ${index + 1}`,
+    });
+  });
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -62,88 +73,67 @@ async function analyzeWithClaude(
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            ...imageContents,
-            {
-              type: 'text',
-              text: `あなたはペット写真の専門家です。上記の${photos.length}枚のペット写真（${petName}）を分析し、以下のJSON形式で回答してください。JSONのみを返し、他のテキストは含めないでください。
+      messages: [{
+        role: 'user',
+        content: [
+          ...imageContents,
+          {
+            type: 'text',
+            text: `あなたはペット写真の専門家です。上の${photos.length}枚の${petName}の写真を分析し、ベスト3を選んでください。
 
-{
-  "results": [
-    {
-      "photoIndex": 0,
-      "totalScore": 95,
-      "qualityScore": 90,
-      "expressionScore": 97,
-      "preferenceScore": 95,
-      "smileRating": 5,
-      "loveRating": 4,
-      "rareRating": 3,
-      "aiComment": "この写真が素晴らしい理由を日本語で20文字程度で"
-    }
-  ]
-}
+以下のJSON形式のみを返してください。他のテキストは一切含めないでください。
+
+{"results":[{"photoIndex":0,"totalScore":97,"qualityScore":92,"expressionScore":98,"preferenceScore":99,"smileRating":4,"loveRating":5,"rareRating":4,"aiComment":"この写真が素晴らしい理由を日本語15-25文字で"}]}
 
 評価基準:
-- qualityScore(0-100): 画質（ブレ、ピンボケ、露出、構図）
-- expressionScore(0-100): ペットの表情（目の輝き、口元、耳の位置、体の姿勢）
-- preferenceScore(0-100): 写真としての魅力（レア度、感情的インパクト）
-- totalScore: 上記3つの加重平均（quality 25% + expression 35% + preference 40%）
-- smileRating(1-5): 笑顔度の★数
-- loveRating(1-5): 愛情度の★数
-- rareRating(1-5): レア度の★数
-- aiComment: この写真が特別な理由を日本語で。感情に訴える表現で。
+- qualityScore(0-100): 画質・構図・ブレ・露出
+- expressionScore(0-100): ペットの表情・目の輝き・口元・耳の位置
+- preferenceScore(0-100): 写真としての魅力・レア度・感情的インパクト
+- totalScore: quality×0.25 + expression×0.35 + preference×0.40
+- smileRating(1-5): 笑顔度
+- loveRating(1-5): 愛情度
+- rareRating(1-5): レア度
+- aiComment: ${petName}の名前を含めて、感情に訴える日本語で。
 
-全${photos.length}枚を分析し、totalScoreの高い順に上位3枚を返してください。
-resultsには上位3枚のみ含めてください。`
-            }
-          ],
-        },
-      ],
+totalScore上位3枚のみ返してください。`
+          }
+        ],
+      }],
     }),
   });
 
   if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${errorData}`);
+    throw new Error(`Claude API: ${response.status}`);
   }
 
   const data = await response.json();
-  const text = data.content[0]?.text || '';
-
+  const text = data.content?.[0]?.text || '';
   const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('Failed to parse Claude response as JSON');
-  }
+  if (!jsonMatch) throw new Error('JSON parse failed');
 
   const parsed = JSON.parse(jsonMatch[0]);
   return parsed.results;
 }
 
-function generateMockResults(photoCount: number, petName: string) {
+function generateMockResults(count: number, petName: string) {
   const comments = [
     `窓辺の光が${petName}の瞳をキラキラにしています`,
     `この無邪気な笑顔は見ているだけで幸せになれます`,
-    `お散歩中の凛とした横顔がとても美しい一枚`,
-    `ふわふわの毛並みが夕陽に輝いて最高のショットです`,
-    `カメラ目線のこの表情、完璧なタイミングです`,
+    `${petName}の凛とした横顔がとても美しい一枚`,
+    `ふわふわの毛並みが最高のショットです`,
+    `カメラ目線の${petName}、完璧なタイミングです`,
   ];
+  const indices = Array.from({ length: count }, (_, i) => i);
+  const shuffled = indices.sort(() => Math.random() - 0.5).slice(0, 3);
 
-  const indices = Array.from({ length: photoCount }, (_, i) => i);
-  const shuffled = indices.sort(() => Math.random() - 0.5);
-  const top3 = shuffled.slice(0, 3);
-
-  return top3.map((photoIndex, rank) => ({
+  return shuffled.map((photoIndex, rank) => ({
     photoIndex,
     totalScore: 97 - rank * 3 + Math.floor(Math.random() * 3),
-    qualityScore: 90 + Math.floor(Math.random() * 10),
-    expressionScore: 88 + Math.floor(Math.random() * 12),
-    preferenceScore: 85 + Math.floor(Math.random() * 15),
-    smileRating: 5 - rank > 2 ? 5 - rank : 3,
-    loveRating: Math.min(5, 5 - rank + Math.floor(Math.random() * 2)),
+    qualityScore: 88 + Math.floor(Math.random() * 12),
+    expressionScore: 85 + Math.floor(Math.random() * 15),
+    preferenceScore: 83 + Math.floor(Math.random() * 17),
+    smileRating: Math.max(3, 5 - rank),
+    loveRating: Math.min(5, Math.max(3, 5 - rank + Math.floor(Math.random() * 2))),
     rareRating: Math.min(5, 3 + Math.floor(Math.random() * 3)),
     aiComment: comments[rank] || comments[0],
   }));

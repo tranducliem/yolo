@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { setSessionData, setProcessedPhotos } from "@/lib/store";
 import { useAuth } from "@/hooks/useAuth";
 
 interface Photo {
@@ -25,27 +24,21 @@ function testImage(file: File): Promise<Photo> {
   });
 }
 
-function resizeAndConvertToBase64(file: File, maxSize: number): Promise<string> {
+function resizeToBase64(file: File, maxSize: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        if (width > maxSize || height > maxSize) {
-          if (width > height) {
-            height = (height / width) * maxSize;
-            width = maxSize;
-          } else {
-            width = (width / height) * maxSize;
-            height = maxSize;
-          }
+        let w = img.width, h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) { h = (h / w) * maxSize; w = maxSize; }
+          else { w = (w / h) * maxSize; h = maxSize; }
         }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', 0.85));
       };
       img.onerror = reject;
@@ -114,48 +107,47 @@ export default function TryPage() {
     }, 200);
   };
 
-  const submit = async () => {
+  const handleAnalyze = async () => {
     if (!name.trim()) {
       setError("名前を入力してください");
       return;
     }
-    if (photos.length < 5) return;
+    if (photos.length < 1) return;
     setSubmitting(true);
 
-    // Convert all photos to data URLs for display
-    const images = await Promise.all(
-      photos.map(
-        (p) =>
-          new Promise<string>((r) => {
-            const fr = new FileReader();
-            fr.onloadend = () => r(fr.result as string);
-            fr.readAsDataURL(p.file);
-          })
-      )
-    );
+    try {
+      // API送信用（1024px）
+      const apiPhotos = await Promise.all(
+        photos.map(async (p) => {
+          const full = await resizeToBase64(p.file, 1024);
+          return {
+            name: p.file.name,
+            base64: full.split(',')[1], // data:image/jpeg;base64, を除去
+            type: 'image/jpeg',
+          };
+        })
+      );
 
-    // Resize photos and prepare base64 for API
-    const processed = await Promise.all(
-      photos.map(async (photo) => {
-        const dataUrl = await resizeAndConvertToBase64(photo.file, 1024);
-        return {
-          name: photo.file.name,
-          base64: dataUrl.split(',')[1], // Remove data:image/... prefix
-          type: photo.file.type || 'image/jpeg',
-        };
-      })
-    );
+      // プレビュー用（600px。/resultsで写真を表示するため）
+      const previews = await Promise.all(
+        photos.map((p) => resizeToBase64(p.file, 600))
+      );
 
-    // Store both display images and API-ready photos
-    setSessionData({ petName: name.trim(), images });
-    setProcessedPhotos(processed);
-    incrementTry();
-    router.push("/analyzing");
+      sessionStorage.setItem('yolo_pet_name', name.trim());
+      sessionStorage.setItem('yolo_photos', JSON.stringify(apiPhotos));
+      sessionStorage.setItem('yolo_photo_previews', JSON.stringify(previews));
+
+      incrementTry();
+      router.push('/analyzing');
+    } catch (err) {
+      console.error(err);
+      setError('写真の処理中にエラーが発生しました。もう一度お試しください。');
+      setSubmitting(false);
+    }
   };
 
-  const remaining = Math.max(0, 5 - photos.length);
   const canSubmit =
-    !submitting && !preparing && photos.length >= 5 && name.trim().length > 0;
+    !submitting && !preparing && photos.length >= 1 && name.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-white">
@@ -269,7 +261,7 @@ export default function TryPage() {
           className="mb-6"
         >
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            写真をアップロード（5〜20枚）
+            写真をアップロード（1〜20枚）
           </label>
           <motion.div
             animate={{
@@ -338,7 +330,7 @@ export default function TryPage() {
                     ドラッグ&ドロップ or タップで選択
                   </p>
                   <p className="text-gray-400 text-sm mt-1">
-                    JPG, PNG, HEIC対応 / 5〜20枚
+                    JPG, PNG, HEIC対応 / 1〜20枚
                   </p>
                 </motion.div>
               )}
@@ -427,7 +419,7 @@ export default function TryPage() {
                         <span className="text-2xl">📷</span>
                       </div>
                     )}
-                    {/* Delete button - always visible on mobile (no hover), visible on hover for desktop */}
+                    {/* Delete button */}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -442,20 +434,6 @@ export default function TryPage() {
                 ))}
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Remaining photos warning */}
-        <AnimatePresence>
-          {remaining > 0 && photos.length > 0 && (
-            <motion.p
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="text-sm text-amber-600 mb-4 text-center"
-            >
-              あと{remaining}枚追加してください
-            </motion.p>
           )}
         </AnimatePresence>
 
@@ -495,7 +473,7 @@ export default function TryPage() {
               : { opacity: { duration: 0.5, delay: 0.3 } }
           }
           whileTap={canSubmit ? { scale: 0.95 } : {}}
-          onClick={submit}
+          onClick={handleAnalyze}
           disabled={!canSubmit}
           className="w-full py-4 rounded-xl text-white font-bold text-lg bg-gradient-to-r from-accent to-accent-light shadow-lg shadow-accent/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
@@ -510,7 +488,7 @@ export default function TryPage() {
                 }}
                 className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
               />
-              準備中...
+              写真を準備中...
             </>
           ) : (
             "✨ ベストショットを見つける"

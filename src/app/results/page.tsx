@@ -4,14 +4,36 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { clearSessionData } from "@/lib/store";
 import { generateShareImage } from "@/lib/generateShareImage";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/AuthModal";
-import type { ResultItem } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Helper: Stars component – renders 5 stars, `n` filled gold, rest gray
+// Types
+// ---------------------------------------------------------------------------
+interface ApiResult {
+  photoIndex: number;
+  totalScore: number;
+  qualityScore?: number;
+  expressionScore?: number;
+  preferenceScore?: number;
+  smileRating: number;
+  loveRating: number;
+  rareRating: number;
+  aiComment: string;
+}
+
+interface DisplayResult {
+  rank: number;
+  dataUrl: string;
+  comment: string;
+  smileScore: number;
+  loveScore: number;
+  rareScore: number;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
 // ---------------------------------------------------------------------------
 function Stars({ n }: { n: number }) {
   return (
@@ -25,40 +47,23 @@ function Stars({ n }: { n: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helper: Score row for a single result
-// ---------------------------------------------------------------------------
-function ScoreRow({ item, size = "base" }: { item: ResultItem; size?: "base" | "sm" }) {
+function ScoreRow({ item, size = "base" }: { item: DisplayResult; size?: "base" | "sm" }) {
   const textClass = size === "sm" ? "text-xs" : "text-sm";
   return (
     <div className={`flex flex-wrap gap-x-3 gap-y-1 ${textClass}`}>
-      <span>
-        笑顔度<Stars n={item.smileScore} />
-      </span>
-      <span>
-        愛情度<Stars n={item.loveScore} />
-      </span>
-      <span>
-        レア度<Stars n={item.rareScore} />
-      </span>
+      <span>笑顔度<Stars n={item.smileScore} /></span>
+      <span>愛情度<Stars n={item.loveScore} /></span>
+      <span>レア度<Stars n={item.rareScore} /></span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helper: GoldParticles – 12 sparkle emojis that fly outward from center
-// ---------------------------------------------------------------------------
 function GoldParticles() {
   const particles = useRef(
     Array.from({ length: 12 }, (_, i) => {
       const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.5;
       const distance = 120 + Math.random() * 100;
-      return {
-        id: i,
-        x: Math.cos(angle) * distance,
-        y: Math.sin(angle) * distance,
-        delay: Math.random() * 0.3,
-      };
+      return { id: i, x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, delay: Math.random() * 0.3 };
     })
   ).current;
 
@@ -79,31 +84,15 @@ function GoldParticles() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helper: TypewriterText – reveals text one character at a time
-// ---------------------------------------------------------------------------
-function TypewriterText({
-  text,
-  speed = 50,
-  onComplete,
-}: {
-  text: string;
-  speed?: number;
-  onComplete?: () => void;
-}) {
+function TypewriterText({ text, speed = 50, onComplete }: { text: string; speed?: number; onComplete?: () => void }) {
   const [charCount, setCharCount] = useState(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
-  useEffect(() => {
-    setCharCount(0);
-  }, [text]);
+  useEffect(() => { setCharCount(0); }, [text]);
 
   useEffect(() => {
-    if (charCount >= text.length) {
-      onCompleteRef.current?.();
-      return;
-    }
+    if (charCount >= text.length) { onCompleteRef.current?.(); return; }
     const timer = setTimeout(() => setCharCount((c) => c + 1), speed);
     return () => clearTimeout(timer);
   }, [charCount, text.length, speed]);
@@ -124,17 +113,17 @@ function TypewriterText({
 type Phase = "loading" | "countdown" | "first" | "second_third" | "cta";
 
 // ---------------------------------------------------------------------------
-// Main page component
+// Main component
 // ---------------------------------------------------------------------------
 export default function ResultsPage() {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
 
-  // Data state
-  const [results, setResults] = useState<ResultItem[]>([]);
+  // Data
+  const [results, setResults] = useState<DisplayResult[]>([]);
   const [petName, setPetName] = useState("");
 
-  // Phase & timing state
+  // Phase & timing
   const [phase, setPhase] = useState<Phase>("loading");
   const [countdownNumber, setCountdownNumber] = useState(3);
   const [showFirstPhoto, setShowFirstPhoto] = useState(false);
@@ -148,12 +137,10 @@ export default function ResultsPage() {
   const [showCtaButtons, setShowCtaButtons] = useState(false);
   const [showGoodsBanner, setShowGoodsBanner] = useState(false);
   const [authModal, setAuthModal] = useState<string | null>(null);
-  const [mode, setMode] = useState<'mock' | 'live'>('mock');
+  const [mode, setMode] = useState<"mock" | "live">("mock");
 
-  // Refs for timers
   const goodsBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sorted results
   const first = results.find((r) => r.rank === 1);
   const second = results.find((r) => r.rank === 2);
   const third = results.find((r) => r.rank === 3);
@@ -162,18 +149,36 @@ export default function ResultsPage() {
   // Load results from sessionStorage
   // ----------------------------------------------------------
   useEffect(() => {
-    const raw = sessionStorage.getItem("yolo_results");
-    if (!raw) {
+    const resultsJson = sessionStorage.getItem("yolo_results");
+    const previewsJson = sessionStorage.getItem("yolo_photo_previews");
+    const name = sessionStorage.getItem("yolo_pet_name");
+
+    if (!resultsJson || !previewsJson) {
       router.push("/try");
       return;
     }
+
     try {
-      const d = JSON.parse(raw) as { petName: string; results: ResultItem[] };
-      setPetName(d.petName);
-      setResults(d.results);
-      const savedMode = sessionStorage.getItem('yolo_mode');
-      setMode((savedMode as 'mock' | 'live') || 'mock');
-      // Start countdown after a brief loading fade-in
+      const apiResults: ApiResult[] = JSON.parse(resultsJson);
+      const previews: string[] = JSON.parse(previewsJson);
+      const pName = name || "ペット";
+      setPetName(pName);
+
+      // Convert API results → display results with real photos
+      const displayResults: DisplayResult[] = apiResults.slice(0, 3).map((r, i) => ({
+        rank: i + 1,
+        dataUrl: previews[r.photoIndex] ?? previews[i] ?? previews[0] ?? "",
+        comment: r.aiComment,
+        smileScore: r.smileRating || 4,
+        loveScore: r.loveRating || 4,
+        rareScore: r.rareRating || 4,
+      }));
+
+      setResults(displayResults);
+
+      const savedMode = sessionStorage.getItem("yolo_analysis_mode");
+      setMode((savedMode as "mock" | "live") || "mock");
+
       setTimeout(() => setPhase("countdown"), 500);
     } catch {
       router.push("/try");
@@ -181,115 +186,90 @@ export default function ResultsPage() {
   }, [router]);
 
   // ----------------------------------------------------------
-  // Phase 1: Countdown 3 → 2 → 1
+  // Countdown
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "countdown") return;
-    if (countdownNumber <= 0) {
-      setPhase("first");
-      return;
-    }
+    if (countdownNumber <= 0) { setPhase("first"); return; }
     const timer = setTimeout(() => setCountdownNumber((c) => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [phase, countdownNumber]);
 
   // ----------------------------------------------------------
-  // Phase 2: 1st place reveal sequence
+  // 1st place reveal
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "first") return;
-    // Transition background from black to navy
     setBgColor("#0D1B2A");
-    // Show title slide-in
     const t1 = setTimeout(() => setShowFirstTitle(true), 300);
-    // Show photo with spring
     const t2 = setTimeout(() => setShowFirstPhoto(true), 800);
-    // Goods banner: 3 seconds after phase 2 starts
     goodsBannerTimerRef.current = setTimeout(() => setShowGoodsBanner(true), 3000);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      if (goodsBannerTimerRef.current) clearTimeout(goodsBannerTimerRef.current);
-    };
+    return () => { clearTimeout(t1); clearTimeout(t2); if (goodsBannerTimerRef.current) clearTimeout(goodsBannerTimerRef.current); };
   }, [phase]);
 
-  // Show scores after typewriter comment finishes
   useEffect(() => {
     if (!commentDone) return;
     const timer = setTimeout(() => {
       setShowFirstScores(true);
-      // Move to phase 3 after scores show
       setTimeout(() => setPhase("second_third"), 1000);
     }, 500);
     return () => clearTimeout(timer);
   }, [commentDone]);
 
   // ----------------------------------------------------------
-  // Phase 3: 2nd and 3rd place
+  // 2nd & 3rd
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "second_third") return;
     const t1 = setTimeout(() => setShowSecond(true), 300);
     const t2 = setTimeout(() => setShowThird(true), 800);
     const t3 = setTimeout(() => setPhase("cta"), 2000);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [phase]);
 
   // ----------------------------------------------------------
-  // Phase 4: CTA reveal
+  // CTA
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "cta") return;
-    // Background transitions to white
     setBgColor("#FFFFFF");
     const t1 = setTimeout(() => setShowDonationCard(true), 500);
     const t2 = setTimeout(() => setShowCtaButtons(true), 1200);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [phase]);
 
   // ----------------------------------------------------------
-  // Web Share API
+  // Share
   // ----------------------------------------------------------
   const share = useCallback(async () => {
     if (!first) return;
     try {
+      // Try full image share first
       const shareBlob = await generateShareImage(
         first.dataUrl,
         petName,
         first.comment,
         { smile: first.smileScore, love: first.loveScore, rare: first.rareScore }
       );
-      const shareFile = new File([shareBlob], `${petName}_bestshot.png`, { type: 'image/png' });
+      const shareFile = new File([shareBlob], `${petName}_bestshot.png`, { type: "image/png" });
 
-      if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+      if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [shareFile] })) {
         await navigator.share({
           title: `${petName}のベストショット — YOLO`,
           text: `AIが選んだ${petName}のベストショット！🌟 シェアが保護犬の食事になります\n#YOLO #ベストショット`,
           files: [shareFile],
-          url: 'https://yolo.jp',
+          url: "https://yolo.jp",
         });
-      } else if (typeof navigator !== 'undefined' && navigator.share) {
+      } else if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share({
           title: `${petName}のベストショット — YOLO`,
           text: `AIが選んだ${petName}のベストショット！🌟\n#YOLO`,
-          url: 'https://yolo.jp',
+          url: "https://yolo.jp",
         });
       } else {
-        // Fallback: download image
-        const url = URL.createObjectURL(shareBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${petName}_bestshot.png`;
-        a.click();
-        URL.revokeObjectURL(url);
+        // Fallback: copy to clipboard
+        await navigator.clipboard.writeText(`${petName}のベストショット！🌟 https://yolo.jp`);
+        alert("リンクをコピーしました！");
       }
     } catch {
       // user cancelled share or error
@@ -297,33 +277,29 @@ export default function ResultsPage() {
   }, [petName, first]);
 
   // ----------------------------------------------------------
-  // Handle "try again"
+  // Retry
   // ----------------------------------------------------------
   const handleRetry = useCallback(() => {
     sessionStorage.removeItem("yolo_results");
-    sessionStorage.removeItem("yolo_mode");
-    clearSessionData();
+    sessionStorage.removeItem("yolo_analysis_mode");
+    sessionStorage.removeItem("yolo_photos");
+    sessionStorage.removeItem("yolo_photo_previews");
+    sessionStorage.removeItem("yolo_pet_name");
     router.push("/try");
   }, [router]);
 
-  // ----------------------------------------------------------
-  // Determine text color based on current phase for readability
-  // ----------------------------------------------------------
   const isDarkBg = phase === "loading" || phase === "countdown" || phase === "first" || phase === "second_third";
 
   // ==========================================================
   // RENDER
   // ==========================================================
-
   return (
     <motion.div
       animate={{ backgroundColor: bgColor }}
       transition={{ duration: 3, ease: "easeInOut" }}
       className="min-h-screen relative overflow-hidden"
     >
-      {/* ======================================================= */}
-      {/* Phase 1: Loading + Countdown                            */}
-      {/* ======================================================= */}
+      {/* Loading */}
       <AnimatePresence mode="wait">
         {phase === "loading" && (
           <motion.div
@@ -339,6 +315,7 @@ export default function ResultsPage() {
         )}
       </AnimatePresence>
 
+      {/* Countdown */}
       <AnimatePresence mode="wait">
         {phase === "countdown" && countdownNumber > 0 && (
           <motion.div
@@ -365,12 +342,9 @@ export default function ResultsPage() {
         )}
       </AnimatePresence>
 
-      {/* ======================================================= */}
-      {/* Phase 2: 1st Place Reveal                               */}
-      {/* ======================================================= */}
+      {/* 1st Place */}
       {(phase === "first" || phase === "second_third" || phase === "cta") && first && (
         <div className="flex flex-col items-center px-4 pt-8 pb-4 relative z-10">
-          {/* Title: slides in from top */}
           <AnimatePresence>
             {showFirstTitle && (
               <motion.h2
@@ -384,19 +358,13 @@ export default function ResultsPage() {
             )}
           </AnimatePresence>
 
-          {/* Photo: spring scale from 0 */}
           <div className="relative">
             <AnimatePresence>
               {showFirstPhoto && (
                 <motion.div
                   initial={{ scale: 0, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 300,
-                    damping: 20,
-                    bounce: 0.3,
-                  }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20, bounce: 0.3 }}
                   className="relative"
                 >
                   <div className="rainbow-border rounded-2xl overflow-hidden w-72 h-72 md:w-96 md:h-96 mx-auto">
@@ -407,25 +375,18 @@ export default function ResultsPage() {
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  {/* Gold sparkle particles */}
                   <GoldParticles />
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* AI Comment: typewriter effect */}
           {showFirstPhoto && (
             <div className="mt-4 max-w-sm text-center">
-              <TypewriterText
-                text={first.comment}
-                speed={50}
-                onComplete={() => setCommentDone(true)}
-              />
+              <TypewriterText text={first.comment} speed={50} onComplete={() => setCommentDone(true)} />
             </div>
           )}
 
-          {/* Scores: fade in after comment finishes */}
           <AnimatePresence>
             {showFirstScores && (
               <motion.div
@@ -441,12 +402,9 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* ======================================================= */}
-      {/* Phase 3: 2nd & 3rd Place                                */}
-      {/* ======================================================= */}
+      {/* 2nd & 3rd */}
       {(phase === "second_third" || phase === "cta") && (
         <div className="flex justify-center gap-4 px-4 mt-6 relative z-10">
-          {/* 2nd place: slides in from LEFT */}
           <AnimatePresence>
             {showSecond && second && (
               <motion.div
@@ -457,18 +415,10 @@ export default function ResultsPage() {
               >
                 <div className="border-4 border-gold rounded-2xl overflow-hidden w-40 h-40 flex-shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={second.dataUrl}
-                    alt={`${petName} 2nd place`}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={second.dataUrl} alt={`${petName} 2nd place`} className="w-full h-full object-cover" />
                 </div>
                 <p className="text-gold font-bold text-sm mt-2">🥈 2nd</p>
-                <p
-                  className={`text-xs mt-1 max-w-[160px] text-center italic ${
-                    isDarkBg ? "text-white/80" : "text-gray-600"
-                  }`}
-                >
+                <p className={`text-xs mt-1 max-w-[160px] text-center italic ${isDarkBg ? "text-white/80" : "text-gray-600"}`}>
                   {second.comment}
                 </p>
                 <div className={`mt-1 ${isDarkBg ? "text-white/80" : "text-gray-700"}`}>
@@ -478,7 +428,6 @@ export default function ResultsPage() {
             )}
           </AnimatePresence>
 
-          {/* 3rd place: slides in from RIGHT */}
           <AnimatePresence>
             {showThird && third && (
               <motion.div
@@ -489,18 +438,10 @@ export default function ResultsPage() {
               >
                 <div className="border-4 border-gray-400 rounded-2xl overflow-hidden w-36 h-36 flex-shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={third.dataUrl}
-                    alt={`${petName} 3rd place`}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={third.dataUrl} alt={`${petName} 3rd place`} className="w-full h-full object-cover" />
                 </div>
                 <p className="text-gray-400 font-bold text-sm mt-2">🥉 3rd</p>
-                <p
-                  className={`text-xs mt-1 max-w-[144px] text-center italic ${
-                    isDarkBg ? "text-white/80" : "text-gray-600"
-                  }`}
-                >
+                <p className={`text-xs mt-1 max-w-[144px] text-center italic ${isDarkBg ? "text-white/80" : "text-gray-600"}`}>
                   {third.comment}
                 </p>
                 <div className={`mt-1 ${isDarkBg ? "text-white/80" : "text-gray-700"}`}>
@@ -512,12 +453,9 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* ======================================================= */}
-      {/* Phase 4: Donation Card + CTA Buttons                    */}
-      {/* ======================================================= */}
+      {/* CTA */}
       {phase === "cta" && (
         <div className="px-4 mt-8 pb-32 relative z-10 max-w-md mx-auto">
-          {/* Donation trigger card */}
           <AnimatePresence>
             {showDonationCard && (
               <motion.div
@@ -536,28 +474,16 @@ export default function ResultsPage() {
             )}
           </AnimatePresence>
 
-          {/* CTA Buttons with stagger */}
           <AnimatePresence>
             {showCtaButtons && (
               <motion.div
                 initial="hidden"
                 animate="visible"
-                variants={{
-                  hidden: {},
-                  visible: {
-                    transition: {
-                      staggerChildren: 0.15,
-                    },
-                  },
-                }}
+                variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.15 } } }}
                 className="space-y-3"
               >
-                {/* 1: Share with family */}
                 <motion.button
-                  variants={{
-                    hidden: { opacity: 0, y: 20 },
-                    visible: { opacity: 1, y: 0 },
-                  }}
+                  variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                   transition={{ duration: 0.4 }}
                   onClick={share}
                   className="w-full py-4 rounded-xl bg-gradient-to-r from-accent to-accent-light text-white font-bold text-lg shadow-lg shadow-accent/25 animate-pulse"
@@ -565,12 +491,8 @@ export default function ResultsPage() {
                   💝 家族に送る
                 </motion.button>
 
-                {/* 2: SNS post */}
                 <motion.button
-                  variants={{
-                    hidden: { opacity: 0, y: 20 },
-                    visible: { opacity: 1, y: 0 },
-                  }}
+                  variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                   transition={{ duration: 0.4 }}
                   onClick={share}
                   className="w-full py-3 rounded-xl border-2 border-accent bg-white text-accent font-bold"
@@ -578,12 +500,8 @@ export default function ResultsPage() {
                   📤 SNSに投稿
                 </motion.button>
 
-                {/* 3: Try again */}
                 <motion.button
-                  variants={{
-                    hidden: { opacity: 0, y: 20 },
-                    visible: { opacity: 1, y: 0 },
-                  }}
+                  variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                   transition={{ duration: 0.4 }}
                   onClick={handleRetry}
                   className="w-full py-2 text-sm text-gray-400"
@@ -591,13 +509,9 @@ export default function ResultsPage() {
                   🔄 もう一度選ぶ
                 </motion.button>
 
-                {/* 4: Save results (only if not logged in) */}
                 {!isLoggedIn && (
                   <motion.div
-                    variants={{
-                      hidden: { opacity: 0, y: 20 },
-                      visible: { opacity: 1, y: 0 },
-                    }}
+                    variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                     transition={{ duration: 0.4 }}
                   >
                     <Link
@@ -614,9 +528,7 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* ======================================================= */}
-      {/* Floating Goods Banner                                   */}
-      {/* ======================================================= */}
+      {/* Goods Banner */}
       <AnimatePresence>
         {showGoodsBanner && (
           <motion.div
@@ -630,21 +542,12 @@ export default function ResultsPage() {
               <div className="text-3xl">🎁</div>
               <Link href="/goods" className="flex-1">
                 <p className="font-bold text-sm">この写真でグッズを作れます</p>
-                <p className="text-xs text-gray-400">
-                  アクスタ480円〜 / フィギュア2,980円〜
-                </p>
+                <p className="text-xs text-gray-400">アクスタ480円〜 / フィギュア2,980円〜</p>
               </Link>
-              <Link
-                href="/goods"
-                className="px-4 py-2 bg-gold text-white text-sm font-bold rounded-xl flex-shrink-0"
-              >
+              <Link href="/goods" className="px-4 py-2 bg-gold text-white text-sm font-bold rounded-xl flex-shrink-0">
                 見る
               </Link>
-              <button
-                onClick={() => setShowGoodsBanner(false)}
-                className="text-gray-300 text-lg ml-1"
-                aria-label="閉じる"
-              >
+              <button onClick={() => setShowGoodsBanner(false)} className="text-gray-300 text-lg ml-1" aria-label="閉じる">
                 ✕
               </button>
             </div>
@@ -652,25 +555,16 @@ export default function ResultsPage() {
         )}
       </AnimatePresence>
 
-      {/* ======================================================= */}
-      {/* Auth Modal                                              */}
-      {/* ======================================================= */}
-      {/* API mode indicator (dev only) */}
+      {/* Mode indicator */}
       <div className="fixed bottom-2 right-2 z-[60]">
         <span className={`text-xs px-2 py-1 rounded-full ${
-          mode === 'live'
-            ? 'bg-accent/10 text-accent'
-            : 'bg-gray-100 text-gray-400'
+          mode === "live" ? "bg-accent/10 text-accent" : "bg-gray-100 text-gray-400"
         }`}>
-          AI: {mode === 'live' ? 'live ✨' : 'mock'}
+          AI: {mode === "live" ? "live ✨" : "mock"}
         </span>
       </div>
 
-      <AuthModal
-        isOpen={!!authModal}
-        onClose={() => setAuthModal(null)}
-        trigger={authModal || "default"}
-      />
+      <AuthModal isOpen={!!authModal} onClose={() => setAuthModal(null)} trigger={authModal || "default"} />
     </motion.div>
   );
 }

@@ -3,71 +3,6 @@
 import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { getSessionData, getProcessedPhotos } from "@/lib/store";
-import { useAuth } from "@/hooks/useAuth";
-
-interface ResultItem {
-  rank: number;
-  dataUrl: string;
-  comment: string;
-  smileScore: number;
-  loveScore: number;
-  rareScore: number;
-}
-
-const STEP_PHASES: {
-  startSec: number;
-  endSec: number;
-  text: string;
-  isFinal: boolean;
-}[] = [
-  { startSec: 0, endSec: 4, text: "📸 画質をチェックしています...", isFinal: false },
-  { startSec: 4, endSec: 8, text: "😊 表情を分析しています...", isFinal: false },
-  { startSec: 8, endSec: 12, text: "🏆 ベストショットを選んでいます...", isFinal: false },
-  { startSec: 12, endSec: 14, text: "✨ もう少し...", isFinal: false },
-  { startSec: 14, endSec: 15, text: "🎉 見つかりました！", isFinal: true },
-];
-
-const AI_COMMENTS = [
-  "窓辺の光がモカの瞳をキラキラにしています",
-  "この無邪気な笑顔は見ているだけで幸せになれます",
-  "お散歩中の凛とした横顔がとても美しい一枚",
-  "ふわふわの毛並みが夕陽に輝いて最高のショットです",
-  "カメラ目線のこの表情、完璧なタイミングです",
-];
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function generateFallbackResults(photoCount: number, petName: string) {
-  const comments = [
-    `窓辺の光が${petName}の瞳をキラキラにしています`,
-    `この無邪気な笑顔は見ているだけで幸せになれます`,
-    `お散歩中の凛とした横顔がとても美しい一枚`,
-    `ふわふわの毛並みが夕陽に輝いて最高のショットです`,
-    `カメラ目線のこの表情、完璧なタイミングです`,
-  ];
-  const indices = Array.from({ length: photoCount }, (_, i) => i);
-  const shuffled = indices.sort(() => Math.random() - 0.5).slice(0, 3);
-  return shuffled.map((photoIndex, rank) => ({
-    photoIndex,
-    totalScore: 97 - rank * 3 + Math.floor(Math.random() * 3),
-    smileRating: rank === 0 ? randInt(4, 5) : randInt(3, 4),
-    loveRating: rank === 0 ? randInt(4, 5) : randInt(3, 4),
-    rareRating: rank === 0 ? randInt(4, 5) : randInt(3, 4),
-    aiComment: comments[rank] || comments[0],
-  }));
-}
 
 interface Particle {
   id: number;
@@ -100,7 +35,6 @@ function TypewriterText({ text }: { text: string }) {
   useEffect(() => {
     setDisplayed("");
     indexRef.current = 0;
-
     const interval = setInterval(() => {
       if (indexRef.current < text.length) {
         indexRef.current += 1;
@@ -109,168 +43,137 @@ function TypewriterText({ text }: { text: string }) {
         clearInterval(interval);
       }
     }, 50);
-
     return () => clearInterval(interval);
   }, [text]);
 
   return <>{displayed}</>;
 }
 
+const STEP_PHASES = [
+  { at: 0, text: "📸 画質をチェックしています..." },
+  { at: 4000, text: "😊 表情を分析しています..." },
+  { at: 8000, text: "🏆 ベストショットを選んでいます..." },
+  { at: 12000, text: "✨ もう少し..." },
+];
+
 export default function AnalyzingPage() {
   const router = useRouter();
-  useAuth();
-  const [progress, setProgress] = useState(0);
   const [petName, setPetName] = useState("");
-  const [images, setImages] = useState<string[]>([]);
-  const [done, setDone] = useState(false);
-  const [elapsedSec, setElapsedSec] = useState(0);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [stepText, setStepText] = useState(STEP_PHASES[0].text);
+  const [isComplete, setIsComplete] = useState(false);
   const [fadingToWhite, setFadingToWhite] = useState(false);
-  const [apiDone, setApiDone] = useState(false);
-  const [apiResults, setApiResults] = useState<any[] | null>(null);
-  const [apiMode, setApiMode] = useState<'mock' | 'live'>('mock');
+  const apiDone = useRef(false);
+  const animDone = useRef(false);
+  const navigating = useRef(false);
   const started = useRef(false);
   const particles = useMemo(() => generateParticles(), []);
 
-  const currentPhaseIndex = STEP_PHASES.findIndex(
-    (p) => elapsedSec >= p.startSec && elapsedSec < p.endSec
-  );
-  const activePhase =
-    currentPhaseIndex !== -1
-      ? STEP_PHASES[currentPhaseIndex]
-      : STEP_PHASES[STEP_PHASES.length - 1];
+  const checkAndNavigate = () => {
+    if (apiDone.current && animDone.current && !navigating.current) {
+      navigating.current = true;
+      setIsComplete(true);
+      setStepText("🎉 見つかりました！");
+      setProgress(100);
+      setTimeout(() => {
+        setFadingToWhite(true);
+        setTimeout(() => router.push("/results"), 1000);
+      }, 500);
+    }
+  };
 
-  // Progress timer: 0 to 100 over 15 seconds
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    const data = getSessionData();
-    if (!data) {
-      router.push("/try");
-      return;
-    }
-    setPetName(data.petName);
-    setImages(data.images);
 
+    const name = sessionStorage.getItem("yolo_pet_name");
+    if (!name) { router.push("/try"); return; }
+    setPetName(name);
+
+    // Load previews for marquee display
+    try {
+      const previewsJson = sessionStorage.getItem("yolo_photo_previews");
+      if (previewsJson) setPreviews(JSON.parse(previewsJson));
+    } catch { /* ignore */ }
+
+    // === API呼び出し（バックグラウンド）===
+    const callApi = async () => {
+      const photosJson = sessionStorage.getItem("yolo_photos");
+      if (!photosJson) { router.push("/try"); return; }
+
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photos: JSON.parse(photosJson),
+            petName: name,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          sessionStorage.setItem("yolo_results", JSON.stringify(data.results));
+          sessionStorage.setItem("yolo_analysis_mode", data.mode);
+        }
+      } catch (e) {
+        console.error("API error:", e);
+        // フォールバック
+        sessionStorage.setItem("yolo_results", JSON.stringify([
+          { photoIndex: 0, totalScore: 97, qualityScore: 92, expressionScore: 98, preferenceScore: 99, smileRating: 4, loveRating: 5, rareRating: 4, aiComment: `${name}の最高の瞬間です` },
+          { photoIndex: 1, totalScore: 93, qualityScore: 90, expressionScore: 95, preferenceScore: 94, smileRating: 5, loveRating: 4, rareRating: 3, aiComment: "この笑顔がたまりません" },
+          { photoIndex: 2, totalScore: 91, qualityScore: 95, expressionScore: 88, preferenceScore: 90, smileRating: 3, loveRating: 4, rareRating: 5, aiComment: "美しい一枚です" },
+        ]));
+        sessionStorage.setItem("yolo_analysis_mode", "mock");
+      }
+      apiDone.current = true;
+      checkAndNavigate();
+    };
+    callApi();
+
+    // === アニメーション（15秒）===
     const duration = 15000;
     const startTime = Date.now();
-    const iv = setInterval(() => {
+
+    const tick = () => {
       const elapsed = Date.now() - startTime;
-      const p = Math.min(100, (elapsed / duration) * 100);
-      const sec = Math.min(15, elapsed / 1000);
-      setProgress(p);
-      setElapsedSec(sec);
-      if (p >= 100) {
-        clearInterval(iv);
-        setDone(true);
-      }
-    }, 50);
-    return () => clearInterval(iv);
-  }, [router]);
+      let p = Math.min(elapsed / duration, 1);
 
-  // Call the API in parallel with the animation
-  useEffect(() => {
-    const data = getSessionData();
-    const processed = getProcessedPhotos();
-    if (!data || !processed) return;
+      // API完了後は加速
+      if (apiDone.current && p < 0.95) p = Math.min(p + 0.05, 0.98);
 
-    const callApi = async () => {
-      try {
-        const response = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photos: processed, petName: data.petName }),
-        });
-        const result = await response.json();
-        if (result.success) {
-          setApiResults(result.results);
-          setApiMode(result.mode);
-        } else {
-          throw new Error(result.error);
-        }
-      } catch (error) {
-        console.error('API call failed, using mock results:', error);
-        // Generate fallback mock results
-        const fallbackResults = generateFallbackResults(data.images.length, data.petName);
-        setApiResults(fallbackResults);
-        setApiMode('mock');
+      setProgress(Math.round(p * 100));
+
+      // ステップテキスト更新
+      for (let i = STEP_PHASES.length - 1; i >= 0; i--) {
+        if (elapsed >= STEP_PHASES[i].at) { setStepText(STEP_PHASES[i].text); break; }
       }
-      setApiDone(true);
+
+      if (p >= 1) {
+        animDone.current = true;
+        checkAndNavigate();
+      } else {
+        requestAnimationFrame(tick);
+      }
     };
-
-    callApi();
+    requestAnimationFrame(tick);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // If API completes and animation is past 80%, accelerate to 100%
-  useEffect(() => {
-    if (apiDone && !done && progress >= 80) {
-      // Force completion
-      setProgress(100);
-      setElapsedSec(15);
-      setDone(true);
-    }
-  }, [apiDone, done, progress]);
-
-  // When BOTH animation is done AND API has responded, save and navigate
-  useEffect(() => {
-    if (!done || !apiDone || !apiResults) return;
-    const data = getSessionData();
-    if (!data) return;
-
-    // Convert API results (with photoIndex) to ResultItem format for /results page
-    const top3 = apiResults.slice(0, 3).map((result: any, i: number) => ({
-      rank: i + 1,
-      dataUrl: data.images[result.photoIndex] || data.images[i] || data.images[0],
-      comment: result.aiComment,
-      smileScore: result.smileRating || randInt(3, 5),
-      loveScore: result.loveRating || randInt(3, 5),
-      rareScore: result.rareRating || randInt(3, 5),
-    }));
-
-    sessionStorage.setItem(
-      "yolo_results",
-      JSON.stringify({ petName: data.petName, results: top3 })
-    );
-    sessionStorage.setItem("yolo_mode", apiMode);
-    sessionStorage.setItem("yolo_pet_name", data.petName);
-
-    // Background fade and navigate
-    const fadeTimer = setTimeout(() => {
-      setFadingToWhite(true);
-    }, 0);
-    const navTimer = setTimeout(() => {
-      router.push("/results");
-    }, 2000);
-
-    return () => {
-      clearTimeout(fadeTimer);
-      clearTimeout(navTimer);
-    };
-  }, [done, apiDone, apiResults, apiMode, router]);
-
   const tripled = useMemo(() => {
-    if (images.length === 0) return [];
-    return [...images, ...images, ...images];
-  }, [images]);
+    if (previews.length === 0) return [];
+    return [...previews, ...previews, ...previews];
+  }, [previews]);
 
   const totalMarqueeWidth = tripled.length * 72;
-
   const r = 80;
   const circumference = 2 * Math.PI * r;
 
-  const filterCycle = [
-    "none",
-    "sepia(1)",
-    "contrast(1.5)",
-    "brightness(1.4)",
-    "none",
-  ];
+  const filterCycle = ["none", "sepia(1)", "contrast(1.5)", "brightness(1.4)", "none"];
 
   return (
     <motion.div
       className="relative flex flex-col items-center justify-center min-h-screen px-4 overflow-hidden"
-      animate={{
-        backgroundColor: fadingToWhite ? "#ffffff" : "#0D1B2A",
-      }}
+      animate={{ backgroundColor: fadingToWhite ? "#ffffff" : "#0D1B2A" }}
       transition={{ duration: 1, ease: "easeInOut" }}
     >
       {/* Floating particles */}
@@ -289,13 +192,7 @@ export default function AnalyzingPage() {
           animate={{
             x: [0, 30, -20, 10, 0],
             y: [0, -25, 15, -10, 0],
-            opacity: [
-              p.opacity,
-              p.opacity * 1.5,
-              p.opacity * 0.6,
-              p.opacity * 1.2,
-              p.opacity,
-            ],
+            opacity: [p.opacity, p.opacity * 1.5, p.opacity * 0.6, p.opacity * 1.2, p.opacity],
           }}
           transition={{
             duration: p.duration,
@@ -317,13 +214,13 @@ export default function AnalyzingPage() {
       </motion.h2>
 
       {/* Photo flow (marquee style) */}
-      {images.length > 0 && (
+      {previews.length > 0 && (
         <div className="w-full max-w-md mb-8 overflow-hidden relative h-20 z-10">
           <motion.div
             className="flex gap-2 absolute top-0 left-0"
             animate={{ x: [0, -totalMarqueeWidth / 3] }}
             transition={{
-              duration: images.length * 3,
+              duration: previews.length * 3,
               repeat: Infinity,
               ease: "linear",
             }}
@@ -363,59 +260,33 @@ export default function AnalyzingPage() {
         </div>
       )}
 
-      {/* Circular progress (180px diameter) */}
+      {/* Circular progress */}
       <div className="relative mb-8 z-10" style={{ width: 180, height: 180 }}>
-        <svg
-          width="180"
-          height="180"
-          viewBox="0 0 180 180"
-          className="-rotate-90"
-        >
+        <svg width="180" height="180" viewBox="0 0 180 180" className="-rotate-90">
+          <circle cx="90" cy="90" r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="6" />
           <circle
-            cx="90"
-            cy="90"
-            r={r}
-            fill="none"
-            stroke="rgba(255,255,255,0.15)"
-            strokeWidth="6"
-          />
-          <motion.circle
-            cx="90"
-            cy="90"
-            r={r}
+            cx="90" cy="90" r={r}
             fill="none"
             stroke="#2A9D8F"
             strokeWidth="6"
             strokeLinecap="round"
             strokeDasharray={circumference}
-            initial={{ strokeDashoffset: circumference }}
-            animate={{ strokeDashoffset: 0 }}
-            transition={{ duration: 15, ease: "easeInOut" }}
+            strokeDashoffset={circumference * (1 - progress / 100)}
+            style={{ transition: "stroke-dashoffset 0.3s ease-out" }}
           />
         </svg>
 
-        {/* Orbiting teal glow dot */}
+        {/* Orbiting glow dot */}
         <motion.div
           className="absolute pointer-events-none"
-          style={{
-            width: 0,
-            height: 0,
-            top: "50%",
-            left: "50%",
-            transformOrigin: "center center",
-          }}
+          style={{ width: 0, height: 0, top: "50%", left: "50%", transformOrigin: "center center" }}
           animate={{ rotate: 360 }}
-          transition={{
-            duration: 3,
-            repeat: Infinity,
-            ease: "linear",
-          }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
         >
           <div
             className="absolute rounded-full"
             style={{
-              width: 10,
-              height: 10,
+              width: 10, height: 10,
               backgroundColor: "#2A9D8F",
               boxShadow: "0 0 14px 6px rgba(42,157,143,0.6)",
               top: -(r + 5),
@@ -424,53 +295,41 @@ export default function AnalyzingPage() {
           />
         </motion.div>
 
-        {/* Center percentage number */}
+        {/* Center percentage */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-4xl font-bold text-white">
-            {Math.round(progress)}
-          </span>
+          <span className="text-4xl font-bold text-white">{progress}</span>
         </div>
       </div>
 
-      {/* Step text with typewriter animation */}
+      {/* Step text */}
       <div className="z-10 min-h-[3rem] flex items-center justify-center">
         <AnimatePresence mode="wait">
           <motion.div
-            key={activePhase.text}
+            key={stepText}
             initial={{ opacity: 0, y: 10 }}
             animate={
-              activePhase.isFinal
-                ? {
-                    opacity: 1,
-                    y: 0,
-                    scale: [1, 1.2, 1],
-                    color: "#D4A843",
-                  }
+              isComplete
+                ? { opacity: 1, y: 0, scale: [1, 1.2, 1], color: "#D4A843" }
                 : { opacity: 1, y: 0, color: "#ffffff" }
             }
             exit={{ opacity: 0, y: -10 }}
-            transition={{
-              duration: 0.5,
-              scale: { duration: 0.6, ease: "easeInOut" },
-            }}
+            transition={{ duration: 0.5, scale: { duration: 0.6, ease: "easeInOut" } }}
             className="text-lg md:text-xl font-medium text-center"
           >
-            <TypewriterText text={activePhase.text} />
+            <TypewriterText text={stepText} />
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Navigation indicator after completion */}
-      {done && (
+      {/* Navigation indicator */}
+      {isComplete && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
           className="mt-4 text-center z-10"
         >
-          <p className="text-white/60 text-sm animate-pulse">
-            結果ページに移動します...
-          </p>
+          <p className="text-white/60 text-sm animate-pulse">結果ページに移動します...</p>
         </motion.div>
       )}
     </motion.div>
