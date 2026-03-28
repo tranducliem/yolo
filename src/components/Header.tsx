@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/hooks/useAuth";
 
 const menuLinks = [
   { href: "/try", label: "✨ ベストショットを試す", accent: true },
@@ -23,6 +24,7 @@ const menuLinks = [
 export default function Header() {
   const [show, setShow] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { isLoggedIn, logout } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setShow(window.scrollY > 50);
@@ -124,13 +126,22 @@ export default function Header() {
 
               <div className="border-t border-gray-100 my-4" />
 
-              <Link
-                href="/signup"
-                onClick={() => setMenuOpen(false)}
-                className="block py-3 px-4 text-accent font-medium hover:bg-accent/5 rounded-xl transition-colors text-[15px]"
-              >
-                🔐 ログイン
-              </Link>
+              {isLoggedIn ? (
+                <button
+                  onClick={() => { logout(); setMenuOpen(false); }}
+                  className="block w-full text-left py-3 px-4 text-red-500 font-medium hover:bg-red-50 rounded-xl transition-colors text-[15px]"
+                >
+                  🚪 ログアウト
+                </button>
+              ) : (
+                <Link
+                  href="/signup"
+                  onClick={() => setMenuOpen(false)}
+                  className="block py-3 px-4 text-accent font-medium hover:bg-accent/5 rounded-xl transition-colors text-[15px]"
+                >
+                  🔐 ログイン
+                </Link>
+              )}
 
               <div className="border-t border-gray-100 my-4" />
 

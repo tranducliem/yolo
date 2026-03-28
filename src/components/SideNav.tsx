@@ -23,7 +23,7 @@ const links = [
 
 export default function SideNav() {
   const path = usePathname();
-  const { isLoggedIn, user } = useAuth();
+  const { isLoggedIn, user, logout } = useAuth();
   if (!isLoggedIn) return null;
 
   const me = mockPets[0];
@@ -53,16 +53,24 @@ export default function SideNav() {
         <span className="text-gray-400 text-xs">→</span>
       </Link>
 
-      <div className="p-4 border-t border-gray-100 flex items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={me.imageUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
-        <div>
-          <div className="flex items-center gap-1">
-            <p className="text-sm font-bold">{user?.petName || me.name}</p>
-            <AmbassadorBadge level={3} compact />
+      <div className="p-4 border-t border-gray-100">
+        <div className="flex items-center gap-3 mb-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={me.imageUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+          <div>
+            <div className="flex items-center gap-1">
+              <p className="text-sm font-bold">{user?.petName || me.name}</p>
+              <AmbassadorBadge level={3} compact />
+            </div>
+            <p className="text-[10px] text-gray-400">{me.breed}</p>
           </div>
-          <p className="text-[10px] text-gray-400">{me.breed}</p>
         </div>
+        <button
+          onClick={logout}
+          className="w-full py-2 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+        >
+          ログアウト
+        </button>
       </div>
     </aside>
   );
