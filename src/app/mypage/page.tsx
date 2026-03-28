@@ -3,16 +3,22 @@
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { mockPets } from "@/lib/mockData";
+import Link from "next/link";
+import { mockPets, ambassadorRanks } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/AuthGate";
 import BottomNav from "@/components/BottomNav";
 import SideNav from "@/components/SideNav";
+import AmbassadorBadge from "@/components/AmbassadorBadge";
 
 const me = mockPets[0];
 
 export default function MyPage() {
-  return <AuthGate><MyPageInner /></AuthGate>;
+  return (
+    <AuthGate>
+      <MyPageInner />
+    </AuthGate>
+  );
 }
 
 function MyPageInner() {
@@ -20,81 +26,223 @@ function MyPageInner() {
   const { user, logout } = useAuth();
   const [pub, setPub] = useState(false);
 
+  const fadeUp = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+  };
+
+  // Ambassador progress
+  const currentLevel = user?.ambassadorLevel ?? 0;
+  const nextRank = ambassadorRanks[currentLevel]; // next rank (0-indexed: level 3 -> index 3 is level 4)
+  const progressPercent = currentLevel >= 5 ? 100 : Math.min(95, 40 + currentLevel * 15);
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 lg:pb-8 lg:pl-60">
+    <div className="min-h-screen bg-gray-50 pb-24 md:pb-8 lg:pl-60">
       <SideNav />
-      <div className="max-w-lg md:max-w-2xl mx-auto px-4 pt-6">
-        {/* Profile */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-6 shadow-sm mb-4">
+      <div className="max-w-lg md:max-w-4xl mx-auto px-4 pt-6">
+        {/* Profile card */}
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0 }}
+          className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 mb-4"
+        >
           <div className="flex items-center gap-4 mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={me.imageUrl} alt={me.name} className="w-20 h-20 rounded-full object-cover border-4 border-accent/20" />
-            <div><h1 className="text-2xl font-bold">{me.name}</h1><p className="text-gray-500 text-sm">tomoniを始めて3日目 🎉</p></div>
+            <img
+              src={me.imageUrl}
+              alt={me.name}
+              className="w-20 h-20 rounded-full object-cover border-4 border-accent/20"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-3xl font-bold text-[#0D1B2A]">{user?.petName || me.name}</h1>
+                {user?.ambassadorLevel && (
+                  <AmbassadorBadge level={user.ambassadorLevel} region={user.ambassadorRegion} />
+                )}
+              </div>
+              <p className="text-sm text-[#9CA3AF]">YOLOを始めて3日目</p>
+            </div>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">タイムラインに公開</span>
-            <button onClick={() => setPub(!pub)} className={`w-12 h-7 rounded-full relative transition-colors ${pub ? "bg-accent" : "bg-gray-300"}`}>
-              <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-1 transition-all ${pub ? "left-6" : "left-1"}`} />
-            </button>
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setPub(!pub)}
+              className={`w-12 h-7 rounded-full relative transition-colors ${pub ? "bg-accent" : "bg-gray-300"}`}
+            >
+              <motion.div
+                animate={{ left: pub ? 26 : 4 }}
+                transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                className="w-5 h-5 bg-white rounded-full shadow absolute top-1"
+              />
+            </motion.button>
           </div>
         </motion.div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          {[{ i: "🐾", v: "50", l: "Paw Points" }, { i: "❤️", v: "12", l: "いいね" }, { i: "👥", v: "3", l: "フォロワー" }].map((s) => (
-            <div key={s.l} className="bg-white rounded-2xl p-4 shadow-sm text-center">
-              <div className="text-2xl mb-1">{s.i}</div><div className="text-xl font-bold">{s.v}</div><div className="text-xs text-gray-500">{s.l}</div>
-            </div>
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0.1 }}
+          className="grid grid-cols-3 gap-3 mb-4"
+        >
+          {[
+            { i: "🐾", v: `${user?.donationTotal ? Math.floor(user.donationTotal / 10) : 50}pt`, l: "Paw Points" },
+            { i: "❤️", v: me.likeCount.toLocaleString(), l: "いいね" },
+            { i: "👥", v: me.followers.toLocaleString(), l: "フォロワー" },
+          ].map((s) => (
+            <motion.div
+              key={s.l}
+              whileHover={{ scale: 1.03 }}
+              className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-all duration-200 text-center"
+            >
+              <div className="w-10 h-10 rounded-full bg-[#2A9D8F]/10 flex items-center justify-center mx-auto mb-2">
+                <span className="text-xl">{s.i}</span>
+              </div>
+              <div className="text-xl font-bold tabular-nums text-[#0D1B2A]">{s.v}</div>
+              <div className="text-xs text-[#9CA3AF]">{s.l}</div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
 
-        {/* Best shots */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
-          <h2 className="font-bold mb-3">今月のベストショット</h2>
+        {/* Donation card - LARGE teal gradient */}
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0.2 }}
+          className="bg-gradient-to-br from-[#2A9D8F] to-[#059669] rounded-2xl p-6 shadow-lg mb-4 text-white"
+        >
+          <div className="text-center mb-4">
+            <p className="text-4xl mb-2">🌟</p>
+            <p className="font-extrabold text-2xl leading-tight">
+              あなたは<span className="text-3xl tabular-nums">{user?.donationCount ?? 47}</span>匹の命を救いました
+            </p>
+          </div>
+
+          <div className="bg-white/15 rounded-xl p-4 mb-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-white/80">寄付累計</span>
+              <span className="font-extrabold text-2xl tabular-nums">¥{(user?.donationTotal ?? 2340).toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-white/80">今月</span>
+              <span className="font-bold">¥148<span className="text-xs text-white/60 ml-1">（PRO会員費から¥148）</span></span>
+            </div>
+          </div>
+
+          {/* Ambassador rank */}
+          {user?.ambassadorLevel && user.ambassadorLevel >= 1 && (
+            <div className="bg-white/15 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-xl">👑</span>
+                <div>
+                  <p className="font-bold text-sm">
+                    地域アンバサダー{user.ambassadorRegion ? `（${user.ambassadorRegion}）` : ""}
+                  </p>
+                  <p className="text-[10px] text-white/70">
+                    Lv.{user.ambassadorLevel} / {ambassadorRanks[(user.ambassadorLevel || 1) - 1]?.name}
+                  </p>
+                </div>
+              </div>
+              {/* Progress bar to next rank */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-white/70">
+                  <span>現在: Lv.{currentLevel}</span>
+                  <span>{currentLevel >= 5 ? "MAX" : `次: Lv.${currentLevel + 1} ${nextRank?.name ?? ""}`}</span>
+                </div>
+                <div className="w-full bg-white/20 rounded-full h-2">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progressPercent}%` }}
+                    transition={{ delay: 0.5, duration: 0.8 }}
+                    className="bg-yellow-300 h-2 rounded-full"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <Link href="/donation">
+            <motion.div
+              whileTap={{ scale: 0.98 }}
+              className="w-full py-3 rounded-xl bg-white/20 text-center text-sm font-bold hover:bg-white/30 transition-colors"
+            >
+              詳しく見る →
+            </motion.div>
+          </Link>
+        </motion.div>
+
+        {/* Best shots 3-col 9 photos */}
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0.3 }}
+          className="bg-white rounded-2xl p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 mb-4"
+        >
+          <h2 className="text-lg font-bold text-[#0D1B2A] mb-3">今月のベストショット</h2>
           <div className="grid grid-cols-3 gap-1">
             {me.photos.map((url, i) => (
-              <div key={i} className={`aspect-square rounded-lg overflow-hidden ${i === 0 ? "ring-2 ring-gold" : i === 1 ? "ring-2 ring-gray-300" : ""}`}>
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 + i * 0.05 }}
+                className={`aspect-square rounded-lg overflow-hidden ${
+                  i === 0
+                    ? "ring-2 ring-yellow-400"
+                    : i === 1
+                    ? "ring-2 ring-gray-300"
+                    : ""
+                }`}
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt="" className="w-full h-full object-cover" />
-              </div>
+              </motion.div>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        {/* Donation */}
-        <div className="bg-accent rounded-2xl p-5 shadow-sm mb-4 text-white text-center">
-          <p className="text-3xl mb-2">🌟</p>
-          <p className="font-bold text-lg">あなたは2匹の命を救いました</p>
-          <p className="text-white/80 text-sm mt-1">寄付累計 ¥240</p>
-        </div>
-
-        {/* Badges */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
-          <h2 className="font-bold mb-3">実績バッジ</h2>
-          <div className="flex gap-4 justify-center">
-            {[{ i: "👑", n: "Crown", ok: false }, { i: "⚔️", n: "Battle", ok: false }, { i: "🎯", n: "Dare", ok: true }].map((b) => (
-              <div key={b.n} className={`text-center ${b.ok ? "" : "opacity-40 grayscale"}`}>
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl ${b.ok ? "bg-accent/10" : "bg-gray-100"}`}>{b.i}</div>
-                <p className="text-xs mt-1 font-medium">{b.n}</p>
-                {!b.ok && <p className="text-[10px] text-gray-400">参加すると解放！</p>}
+        {/* Action buttons grid */}
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0.4 }}
+          className="grid grid-cols-2 gap-3 mb-4"
+        >
+          {[
+            { i: "📖", l: "Book", h: "/book" },
+            { i: "✨", l: "Studio", h: "/studio" },
+            { i: "🎁", l: "Goods", h: "/goods" },
+            { i: "📦", l: "注文履歴", h: "/orders" },
+            { i: "⚙️", l: "設定", h: "/settings" },
+            { i: "💎", l: "プラン", h: "/subscription" },
+            { i: "🌟", l: "寄付", h: "/donation" },
+            { i: "👑", l: "アンバサダー", h: "/ambassador" },
+          ].map((a) => (
+            <motion.button
+              key={a.l}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => router.push(a.h)}
+              className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md hover:-translate-y-0.5 text-center transition-all duration-200 flex items-center gap-3"
+            >
+              <div className="w-10 h-10 rounded-full bg-[#2A9D8F]/10 flex items-center justify-center flex-shrink-0">
+                <span className="text-xl">{a.i}</span>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          {[{ i: "📖", l: "フォトブック", h: "/book" }, { i: "✨", l: "イラスト化", h: "/studio" }, { i: "🎁", l: "グッズ", h: "/goods" }].map((a) => (
-            <motion.button key={a.l} whileTap={{ scale: 0.95 }} onClick={() => router.push(a.h)} className="bg-white rounded-2xl p-4 shadow-sm text-center hover:bg-gray-50">
-              <div className="text-2xl mb-1">{a.i}</div><div className="text-xs font-medium text-gray-600">{a.l}</div>
+              <div className="text-sm font-medium text-[#4B5563] leading-tight text-left">{a.l}</div>
             </motion.button>
           ))}
-        </div>
+        </motion.div>
 
         {/* Logout */}
-        <div className="text-center mt-6 mb-4">
-          <button onClick={logout} className="text-sm text-gray-400 hover:text-red">ログアウト</button>
-        </div>
+        <motion.div
+          {...fadeUp}
+          transition={{ delay: 0.5 }}
+          className="text-center mt-6 mb-4"
+        >
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={logout}
+            className="text-sm text-red-500 hover:text-red-600 font-medium transition-all duration-200"
+          >
+            ログアウト
+          </motion.button>
+        </motion.div>
       </div>
       <BottomNav />
     </div>

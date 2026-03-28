@@ -12,7 +12,7 @@ const GUEST_VISIBLE = ["/explore", "/ranking", "/pet"];
 const tabs = [
   { href: "/home", icon: "🏠", label: "ホーム" },
   { href: "/explore", icon: "🔍", label: "探索" },
-  { href: "/post", icon: "📷", label: "投稿", center: true },
+  { href: "/try", icon: "✨", label: "AI", center: true },
   { href: "/ranking", icon: "🔥", label: "ランキング" },
   { href: "/mypage", icon: "🐾", label: "マイページ" },
 ];
@@ -22,29 +22,27 @@ export default function BottomNav() {
   const { isLoggedIn } = useAuth();
   const [authModal, setAuthModal] = useState(false);
 
-  if (HIDDEN_ALWAYS.includes(path)) return null;
+  if (HIDDEN_ALWAYS.includes(path) || path.startsWith("/admin")) return null;
   const isGuestPage = GUEST_VISIBLE.some((p) => path.startsWith(p));
   if (!isLoggedIn && !isGuestPage) return null;
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] md:hidden">
         <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
           {tabs.map((t) => {
             const active = path === t.href;
-            const needsAuth = !isLoggedIn && (t.href === "/post" || t.href === "/home" || t.href === "/mypage");
+            const needsAuth = !isLoggedIn && (t.href === "/home" || t.href === "/mypage");
 
             if (t.center) {
               return (
-                <button key={t.href}
-                  onClick={() => needsAuth ? setAuthModal(true) : undefined}
-                  className="flex flex-col items-center -mt-5">
-                  {needsAuth ? (
-                    <div className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center text-2xl shadow-lg opacity-50">{t.icon}</div>
-                  ) : (
-                    <Link href={t.href} className="w-14 h-14 rounded-full bg-accent flex items-center justify-center text-2xl shadow-lg shadow-accent/30">{t.icon}</Link>
-                  )}
-                </button>
+                <Link key={t.href} href={t.href}
+                  className="flex flex-col items-center -mt-4">
+                  <div className="w-14 h-14 rounded-full bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] flex items-center justify-center text-2xl shadow-lg shadow-accent/30">
+                    <span className="text-white text-2xl">✨</span>
+                  </div>
+                  <span className="text-[10px] font-medium text-accent mt-0.5">AI</span>
+                </Link>
               );
             }
 

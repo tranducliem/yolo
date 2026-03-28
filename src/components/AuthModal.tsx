@@ -15,7 +15,11 @@ const MESSAGES: Record<string, string> = {
   boost: "ブーストするにはアカウントが必要です",
   try: "もう一度試すにはアカウントが必要です",
   save: "結果を保存するにはアカウントが必要です",
-  default: "tomoniに参加しよう",
+  cart: "カートに追加するにはアカウントが必要です",
+  order: "注文するにはアカウントが必要です",
+  donation: "寄付するにはアカウントが必要です",
+  ambassador: "アンバサダーになるにはアカウントが必要です",
+  default: "YOLOに参加して動物を救おう！",
 };
 
 interface Props {
@@ -48,9 +52,10 @@ export default function AuthModal({ isOpen, onClose, trigger = "default" }: Prop
             onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
             <div className="text-center mb-6">
               <div className="text-3xl mb-2">🐾</div>
-              <p className="text-xs text-accent font-medium mb-2">tomoni</p>
+              <p className="text-xs text-accent font-medium mb-2">YOLO</p>
               <h3 className="text-lg font-bold mb-2">{heading}</h3>
-              <p className="text-sm text-gray-500">無料登録で、いいね・フォロー・投稿・グッズ注文ができます</p>
+              <p className="text-sm text-gray-500 mb-2">無料登録で、いいね・フォロー・投稿・グッズ注文ができます</p>
+              <p className="text-xs text-emerald-600 font-medium">🌟 会員の活動が保護施設への寄付につながります</p>
             </div>
 
             <button onClick={handleSignup}

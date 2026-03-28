@@ -9,8 +9,8 @@ const noto = Noto_Sans_JP({
 });
 
 export const metadata: Metadata = {
-  title: "tomoni — ずっと、ともに。",
-  description: "AIがあなたのペットの最高の1枚を見つけます",
+  title: "YOLO - ずっと、ともに。",
+  description: "YOLOは、AIがあなたのペットのベストショットを見つけるアプリ。この子との一度きりの時間を、最高の1枚に。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -19,7 +19,7 @@ export default function Header() {
       }`}
     >
       <div className="max-w-4xl mx-auto flex items-center justify-between px-4 h-14">
-        <Link href="/" className="text-lg font-bold text-accent">🐾 tomoni</Link>
+        <Link href="/" className="text-lg font-bold text-accent">🐾 YOLO</Link>
         <Link href="/try"
           className="px-4 py-2 bg-accent text-white text-sm font-bold rounded-xl hover:bg-accent-dark transition-colors">
           無料で試す

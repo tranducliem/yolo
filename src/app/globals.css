@@ -2,8 +2,8 @@
 
 :root {
   --accent: #2A9D8F;
-  --accent-light: #3AB8A8;
-  --accent-dark: #1E7A6F;
+  --accent-light: #3DB8A9;
+  --accent-dark: #228B7E;
   --navy: #0D1B2A;
   --gold: #D4A843;
   --red: #E63946;
@@ -36,5 +36,16 @@ body {
 }
 .rainbow-border { animation: rainbow-rotate 3s linear infinite; border-width: 4px; border-style: solid; }
 
+@keyframes sparkle-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(212, 168, 67, 0.3), 0 0 8px rgba(212, 168, 67, 0.1); }
+  50% { box-shadow: 0 0 8px rgba(212, 168, 67, 0.6), 0 0 16px rgba(212, 168, 67, 0.3); }
+}
+.sparkle { animation: sparkle-pulse 2s ease-in-out infinite; }
+
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
