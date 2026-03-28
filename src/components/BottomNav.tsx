@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/AuthModal";
+import FullScreenMenu from "@/components/FullScreenMenu";
 
 const HIDDEN_ALWAYS = ["/", "/try", "/analyzing", "/results", "/signup"];
 const GUEST_VISIBLE = ["/explore", "/ranking", "/pet"];
@@ -14,13 +15,24 @@ const tabs = [
   { href: "/explore", icon: "🔍", label: "探索" },
   { href: "/try", icon: "✨", label: "AI", center: true },
   { href: "/ranking", icon: "🔥", label: "ランキング" },
-  { href: "/mypage", icon: "🐾", label: "マイページ" },
+  { href: "##menu", icon: "☰", label: "メニュー" },
 ];
 
 export default function BottomNav() {
   const path = usePathname();
   const { isLoggedIn } = useAuth();
   const [authModal, setAuthModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Lock body scroll when menu is open
+  useEffect(() => {
+    if (menuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [menuOpen]);
 
   if (HIDDEN_ALWAYS.includes(path) || path.startsWith("/admin")) return null;
   const isGuestPage = GUEST_VISIBLE.some((p) => path.startsWith(p));
@@ -46,6 +58,20 @@ export default function BottomNav() {
               );
             }
 
+            // Menu button
+            if (t.href === "##menu") {
+              return (
+                <button
+                  key="menu"
+                  onClick={() => setMenuOpen(true)}
+                  className="flex flex-col items-center gap-0.5 text-gray-400"
+                >
+                  <span className="text-xl">{t.icon}</span>
+                  <span className="text-[10px] font-medium">{t.label}</span>
+                </button>
+              );
+            }
+
             if (needsAuth) {
               return (
                 <button key={t.href} onClick={() => setAuthModal(true)}
@@ -67,6 +93,7 @@ export default function BottomNav() {
         </div>
       </nav>
       <AuthModal isOpen={authModal} onClose={() => setAuthModal(false)} trigger="default" />
+      <FullScreenMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
     </>
   );
 }
