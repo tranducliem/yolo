@@ -63,12 +63,10 @@ export function useAuth() {
     useCart();
 
   useEffect(() => {
-    let fetchingProfile = false; // Prevent concurrent fetchProfile calls
     let mounted = true;
+    let initialized = false;
 
     async function fetchProfile(authId: string) {
-      if (fetchingProfile) return;
-      fetchingProfile = true;
       try {
         const { data } = await supabase
           .from("users")
@@ -80,7 +78,6 @@ export function useAuth() {
           localStorage.removeItem(STORAGE_KEYS.USER);
         }
       } finally {
-        fetchingProfile = false;
         if (mounted) setLoaded(true);
       }
     }
@@ -97,9 +94,10 @@ export function useAuth() {
       if (mounted) setLoaded(true);
     }
 
-    // Try Supabase Auth first
+    // Initial load — try Supabase Auth first, fallback to mock
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
       if (!mounted) return;
+      initialized = true;
       if (authUser) {
         fetchProfile(authUser.id);
       } else {
@@ -107,14 +105,14 @@ export function useAuth() {
       }
     });
 
-    // Listen for auth state changes (Supabase)
+    // Listen for auth state changes (login/logout events AFTER initial load)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return;
-      if (session?.user) {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted || !initialized) return; // Skip events during initial load
+      if (event === "SIGNED_IN" && session?.user) {
         await fetchProfile(session.user.id);
-      } else {
+      } else if (event === "SIGNED_OUT") {
         const raw = localStorage.getItem(STORAGE_KEYS.USER);
         if (!raw) setUser(null);
         setLoaded(true);

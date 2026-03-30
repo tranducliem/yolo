@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeWithClaude, analyzeWithClaudeAgentSDK, generateMockResults } from "@/lib/analyze";
 import { getAnalyzeProvider } from "@/lib/anthropic";
-import type { AnalyzeRequest } from "@/types";
+import { createClient } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import type { AnalyzeRequest, AnalyzeResult } from "@/types";
 import { LIMITS } from "@/config/site";
 
-export const maxDuration = 60; // Vercel timeout (seconds)
+export const maxDuration = 60;
+
+// Per-plan bestshot limits
+const PLAN_BESTSHOT_LIMITS: Record<string, number> = {
+  free: 3,
+  plus: 10,
+  pro: 30,
+  family: Infinity,
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,49 +25,148 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "No photos provided" }, { status: 400 });
     }
 
-    const provider = getAnalyzeProvider();
-    console.log(`[analyze] Provider: ${provider}, Photos: ${photos.length}`);
+    // Check auth (optional — anonymous users can analyze once)
+    const supabase = await createClient();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
 
-    // Method 1: Claude Agent SDK (OAuth token — Pro/Max subscription)
-    if (provider === "claude_code") {
-      try {
-        const results = await analyzeWithClaudeAgentSDK(photos, petName || "ペット");
-        return NextResponse.json({ success: true, mode: "live", results });
-      } catch (error) {
-        console.error("[analyze] Agent SDK error, falling back to mock:", error);
-        return NextResponse.json({
-          success: true,
-          mode: "mock",
-          results: generateMockResults(photos.length, petName || "ペット"),
-        });
+    let userId: string | null = null;
+    let petId: string | null = null;
+    let userPlan = "free";
+
+    if (authUser) {
+      const { data: profile } = await supabaseAdmin
+        .from("users")
+        .select("id, plan, bestshot_count_this_month, bestshot_count_reset_month")
+        .eq("auth_id", authUser.id)
+        .single();
+
+      if (profile) {
+        userId = profile.id;
+        userPlan = profile.plan;
+
+        // Lazy monthly reset
+        const currentMonth = new Date().getFullYear() * 100 + (new Date().getMonth() + 1);
+        if (profile.bestshot_count_reset_month < currentMonth) {
+          await supabaseAdmin
+            .from("users")
+            .update({
+              bestshot_count_this_month: 0,
+              bestshot_count_reset_month: currentMonth,
+            })
+            .eq("id", profile.id);
+          profile.bestshot_count_this_month = 0;
+        }
+
+        // Check quota
+        const limit = PLAN_BESTSHOT_LIMITS[userPlan] ?? 3;
+        if (limit !== Infinity && profile.bestshot_count_this_month >= limit) {
+          return NextResponse.json({
+            success: false,
+            error: "limit_reached",
+            currentCount: profile.bestshot_count_this_month,
+            limit,
+            plan_required: userPlan === "free" ? "plus" : "pro",
+          });
+        }
+
+        // Get first pet
+        const { data: pet } = await supabaseAdmin
+          .from("pets")
+          .select("id")
+          .eq("user_id", profile.id)
+          .limit(1)
+          .single();
+        if (pet) petId = pet.id;
       }
     }
 
-    // Method 2: Direct Anthropic API (API key — pay-per-token)
-    if (provider === "api") {
+    const provider = getAnalyzeProvider();
+    console.log(
+      `[analyze] Provider: ${provider}, Photos: ${photos.length}, User: ${userId || "anonymous"}`,
+    );
+
+    let results: AnalyzeResult[];
+    let mode: "live" | "mock";
+
+    // Run analysis
+    if (provider === "claude_code") {
       try {
-        const results = await analyzeWithClaude(
+        results = await analyzeWithClaudeAgentSDK(photos, petName || "ペット");
+        mode = "live";
+      } catch (error) {
+        console.error("[analyze] Agent SDK error, falling back to mock:", error);
+        results = generateMockResults(photos.length, petName || "ペット");
+        mode = "mock";
+      }
+    } else if (provider === "api") {
+      try {
+        results = await analyzeWithClaude(
           photos,
           petName || "ペット",
           process.env.ANTHROPIC_API_KEY!,
         );
-        return NextResponse.json({ success: true, mode: "live", results });
+        mode = "live";
       } catch (error) {
         console.error("[analyze] API error, falling back to mock:", error);
-        return NextResponse.json({
-          success: true,
-          mode: "mock",
-          results: generateMockResults(photos.length, petName || "ペット"),
-        });
+        results = generateMockResults(photos.length, petName || "ペット");
+        mode = "mock";
+      }
+    } else {
+      results = generateMockResults(photos.length, petName || "ペット");
+      mode = "mock";
+    }
+
+    // Save bestshots to DB (for authenticated users with live results)
+    let batchId: string | null = null;
+    if (userId && mode === "live") {
+      batchId = crypto.randomUUID();
+
+      const bestshotRows = results.map((r, i) => ({
+        user_id: userId!,
+        pet_id: petId!,
+        photo_url: `analysis/${batchId}/${i}`, // Placeholder — real URL when Storage upload is added
+        total_score: r.totalScore,
+        quality_score: r.qualityScore,
+        expression_score: r.expressionScore,
+        preference_score: r.preferenceScore,
+        smile_rating: r.smileRating,
+        love_rating: r.loveRating,
+        rare_rating: r.rareRating,
+        ai_comment: r.aiComment,
+        rank: i + 1,
+        analysis_mode: mode,
+        analysis_batch_id: batchId,
+      }));
+
+      const { error: insertError } = await supabaseAdmin.from("bestshots").insert(bestshotRows);
+
+      if (insertError) {
+        console.error("[analyze] Failed to save bestshots:", insertError.message);
+      } else {
+        // Increment usage counter
+        const { data: current } = await supabaseAdmin
+          .from("users")
+          .select("bestshot_count_this_month")
+          .eq("id", userId!)
+          .single();
+        if (current) {
+          await supabaseAdmin
+            .from("users")
+            .update({
+              bestshot_count_this_month: current.bestshot_count_this_month + 1,
+            })
+            .eq("id", userId!);
+        }
       }
     }
 
-    // Method 3: Mock fallback (no credentials configured)
-    console.log("[analyze] No credentials — returning mock results");
     return NextResponse.json({
       success: true,
-      mode: "mock",
-      results: generateMockResults(photos.length, petName || "ペット"),
+      mode,
+      batchId,
+      results,
     });
   } catch (error: unknown) {
     console.error("[analyze] Unexpected error:", error);
