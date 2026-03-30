@@ -2,8 +2,8 @@ import type { PhotoData, AnalyzeResult } from "@/types";
 import { API_CONFIG } from "@/config/site";
 
 /**
- * Gọi Claude Vision API để phân tích ảnh thú cưng
- * Tương đương: Laravel Service class gọi external API
+ * Method 1: Direct Anthropic API (uses ANTHROPIC_API_KEY)
+ * Fast, typed response, pay-per-token
  */
 export async function analyzeWithClaude(
   photos: PhotoData[],
@@ -58,6 +58,91 @@ export async function analyzeWithClaude(
 
   const data = await response.json();
   const text = data.content?.[0]?.text || "";
+  return parseAnalysisResponse(text);
+}
+
+/**
+ * Method 2: Claude Agent SDK (uses CLAUDE_CODE_OAUTH_TOKEN)
+ * Spawns Claude Code subprocess, works with Pro/Max subscription
+ */
+export async function analyzeWithClaudeAgentSDK(
+  photos: PhotoData[],
+  petName: string,
+): Promise<AnalyzeResult[]> {
+  // IMPORTANT: Remove ANTHROPIC_API_KEY from env so the subprocess
+  // uses CLAUDE_CODE_OAUTH_TOKEN (Pro/Max subscription) instead of API key.
+  const originalApiKey = process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
+
+  try {
+    const { query } = await import("@anthropic-ai/claude-agent-sdk");
+
+    // Build multimodal content blocks (same format as direct API)
+    const contentBlocks: Record<string, unknown>[] = [];
+
+    photos.forEach((photo, index) => {
+      contentBlocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: photo.type || "image/jpeg",
+          data: photo.base64,
+        },
+      });
+      contentBlocks.push({
+        type: "text",
+        text: `Photo ${index + 1}`,
+      });
+    });
+
+    contentBlocks.push({
+      type: "text",
+      text: buildAnalysisPrompt(photos.length, petName),
+    });
+
+    // Async generator for streaming input
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function* generatePrompt(): AsyncGenerator<any> {
+      yield {
+        type: "user",
+        message: {
+          role: "user",
+          content: contentBlocks,
+        },
+        parent_tool_use_id: null,
+      };
+    }
+
+    let resultText = "";
+
+    for await (const msg of query({
+      prompt: generatePrompt(),
+      options: {
+        maxTurns: 1,
+      },
+    })) {
+      if (msg.type === "result" && msg.subtype === "success") {
+        resultText = msg.result;
+      }
+    }
+
+    if (!resultText) {
+      throw new Error("No result from Claude Agent SDK");
+    }
+
+    return parseAnalysisResponse(resultText);
+  } finally {
+    // Restore ANTHROPIC_API_KEY so other code paths still work
+    if (originalApiKey) {
+      process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+  }
+}
+
+/**
+ * Parse JSON response from Claude (shared between both methods)
+ */
+function parseAnalysisResponse(text: string): AnalyzeResult[] {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("JSON parse failed");
 
@@ -66,12 +151,9 @@ export async function analyzeWithClaude(
 }
 
 /**
- * Tạo mock results cho development (khi không có API key)
+ * Mock results for development (when no API key or OAuth token)
  */
-export function generateMockResults(
-  count: number,
-  petName: string,
-): AnalyzeResult[] {
+export function generateMockResults(count: number, petName: string): AnalyzeResult[] {
   const comments = [
     `窓辺の光が${petName}の瞳をキラキラにしています`,
     `この無邪気な笑顔は見ているだけで幸せになれます`,

@@ -52,9 +52,9 @@ function TypewriterText({ text }: { text: string }) {
 
 const STEP_PHASES = [
   { at: 0, text: "📸 画質をチェックしています..." },
-  { at: 4000, text: "😊 表情を分析しています..." },
-  { at: 8000, text: "🏆 ベストショットを選んでいます..." },
-  { at: 12000, text: "✨ もう少し..." },
+  { at: 8000, text: "😊 表情を分析しています..." },
+  { at: 18000, text: "🏆 ベストショットを選んでいます..." },
+  { at: 28000, text: "✨ もう少し..." },
 ];
 
 export default function AnalyzingPage() {
@@ -69,6 +69,7 @@ export default function AnalyzingPage() {
   const animDone = useRef(false);
   const navigating = useRef(false);
   const started = useRef(false);
+  const progressRef = useRef(0);
   const [particles, setParticles] = useState<Particle[]>([]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only particle generation to avoid hydration mismatch
@@ -178,18 +179,35 @@ export default function AnalyzingPage() {
     };
     callApi();
 
-    // === アニメーション（15秒）===
-    const duration = 15000;
+    // === アニメーション ===
+    // Progress runs from 0% to a random cap (93-99%), then WAITS for API.
+    // Only reaches 100% when API is done.
+    const maxBeforeApi = 93 + Math.floor(Math.random() * 7); // 93-99%
+    const duration = 40000; // 40 seconds to reach the cap (slower, matches API speed)
     const startTime = Date.now();
 
     const tick = () => {
       const elapsed = Date.now() - startTime;
-      let p = Math.min(elapsed / duration, 1);
 
-      // API完了後は加速
-      if (apiDone.current && p < 0.95) p = Math.min(p + 0.05, 0.98);
+      if (apiDone.current) {
+        // API is done — animate to 100% quickly
+        progressRef.current = Math.min(progressRef.current + 2, 100);
+        setProgress(progressRef.current);
+        if (progressRef.current >= 100) {
+          animDone.current = true;
+          checkAndNavigate();
+          return;
+        }
+        requestAnimationFrame(tick);
+        return;
+      }
 
-      setProgress(Math.round(p * 100));
+      // API not done — progress toward cap with easing (fast start, slow end)
+      const t = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      const p = Math.min(Math.round(eased * maxBeforeApi), maxBeforeApi);
+      progressRef.current = p;
+      setProgress(p);
 
       // ステップテキスト更新
       for (let i = STEP_PHASES.length - 1; i >= 0; i--) {
@@ -199,12 +217,7 @@ export default function AnalyzingPage() {
         }
       }
 
-      if (p >= 1) {
-        animDone.current = true;
-        checkAndNavigate();
-      } else {
-        requestAnimationFrame(tick);
-      }
+      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

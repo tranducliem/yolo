@@ -15,6 +15,7 @@
 /.husky
 /.playwright-mcp
 /.serena
+/scripts
 
 # dev tool configs (local only)
 commitlint.config.mjs
@@ -29,6 +30,7 @@ prettier.config.mjs
 
 # production
 /build
+/public/test/*
 
 # misc
 .DS_Store

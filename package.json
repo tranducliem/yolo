@@ -23,6 +23,7 @@
     ]
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.87",
     "@anthropic-ai/sdk": "^0.80.0",
     "@supabase/supabase-js": "^2.100.0",
     "framer-motion": "^12.38.0",
