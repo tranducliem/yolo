@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   const { data, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[products] Error:", error);
+    return NextResponse.json({ error: "Failed to get products" }, { status: 500 });
   }
 
   return NextResponse.json({ products: data });

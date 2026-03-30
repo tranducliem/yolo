@@ -113,8 +113,8 @@ function TypewriterText({
     onCompleteRef.current = onComplete;
   });
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting on text prop change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting on text prop change
     setCharCount(0);
   }, [text]);
 
@@ -221,8 +221,8 @@ export default function ResultsPage() {
   // ----------------------------------------------------------
   useEffect(() => {
     if (phase !== "countdown") return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven phase transition
     if (countdownNumber <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven phase transition
       setPhase("first");
       return;
     }

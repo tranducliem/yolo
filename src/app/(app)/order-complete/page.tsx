@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
-// Confetti particle component (40 particles) — client-only to avoid hydration mismatch
+// Confetti particle component
 function Confetti() {
   const [particles, setParticles] = useState<
     {
@@ -38,22 +39,9 @@ function Confetti() {
       {particles.map((p) => (
         <motion.div
           key={p.id}
-          initial={{
-            x: `${p.x}vw`,
-            y: -20,
-            rotate: 0,
-            opacity: 1,
-          }}
-          animate={{
-            y: "110vh",
-            rotate: p.rotation + 720,
-            opacity: [1, 1, 0],
-          }}
-          transition={{
-            duration: p.duration,
-            delay: p.delay,
-            ease: "easeIn",
-          }}
+          initial={{ x: `${p.x}vw`, y: -20, rotate: 0, opacity: 1 }}
+          animate={{ y: "110vh", rotate: p.rotation + 720, opacity: [1, 1, 0] }}
+          transition={{ duration: p.duration, delay: p.delay, ease: "easeIn" }}
           style={{
             position: "absolute",
             width: p.size,
@@ -67,40 +55,64 @@ function Confetti() {
   );
 }
 
-export default function OrderCompletePage() {
+interface OrderData {
+  order_number: string;
+  total: number;
+  donation_amount: number;
+  created_at: string;
+  items: { name: string; price: number; quantity: number }[];
+}
+
+function OrderCompleteContent() {
+  const searchParams = useSearchParams();
+  const orderId = searchParams.get("orderId");
   const [showConfetti, setShowConfetti] = useState(true);
+  const [order, setOrder] = useState<OrderData | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowConfetti(false), 4000);
     return () => clearTimeout(timer);
   }, []);
 
-  const orderNumber = "#YOLO-20260327-001";
-  const deliveryEstimate = "2026年4月3日";
-  const donationAmount = 490;
-  const rescuedDogName = "ハナちゃん";
-  const rescuedDogImage =
-    "https://images.unsplash.com/photo-1561037404-61cd46aa615b?w=500&h=500&fit=crop";
+  useEffect(() => {
+    if (orderId) {
+      fetch(`/api/orders/${orderId}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.order) setOrder(d.order);
+        })
+        .catch(() => {});
+    }
+  }, [orderId]);
+
+  const donationAmount = order?.donation_amount || 0;
+  const orderNumber = order?.order_number || "";
+  const mealsProvided = Math.max(1, Math.floor(donationAmount / 50));
+
+  // Estimate delivery: 7 days from order
+  const deliveryDate = order?.created_at
+    ? new Date(new Date(order.created_at).getTime() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString(
+        "ja-JP",
+      )
+    : "";
 
   const handleShare = async () => {
     const shareData = {
       title: "YOLOで動物を救いました！",
-      text: `YOLOでのお買い物で¥${donationAmount.toLocaleString()}が福岡の保護施設に届けられました！あなたも一緒に動物を救いませんか？`,
+      text: `YOLOでのお買い物で¥${donationAmount.toLocaleString()}が保護施設に届けられました！`,
       url: "https://yolo-pet.app",
     };
     if (navigator.share) {
       try {
         await navigator.share(shareData);
       } catch {
-        // user cancelled
+        /* user cancelled */
       }
     } else {
-      // Fallback: copy to clipboard
       try {
         await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
-        alert("クリップボードにコピーしました！");
       } catch {
-        // ignore
+        /* ignore */
       }
     }
   };
@@ -110,7 +122,6 @@ export default function OrderCompletePage() {
       {showConfetti && <Confetti />}
 
       <div className="relative z-20 mx-auto max-w-lg px-4 pt-10 md:max-w-4xl">
-        {/* Success Icon */}
         <motion.div
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
@@ -129,7 +140,6 @@ export default function OrderCompletePage() {
           </div>
         </motion.div>
 
-        {/* Heading */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -147,79 +157,71 @@ export default function OrderCompletePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="mb-4 rounded-2xl bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+          className="mb-4 rounded-2xl bg-white p-5 shadow-sm"
         >
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-base text-[#4B5563]">注文番号</span>
-              <span className="text-accent font-mono text-sm font-bold">{orderNumber}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-base text-[#4B5563]">お届け予定日</span>
-              <span className="text-sm font-bold">{deliveryEstimate}</span>
-            </div>
+            {orderNumber && (
+              <div className="flex items-center justify-between">
+                <span className="text-base text-[#4B5563]">注文番号</span>
+                <span className="text-accent font-mono text-sm font-bold">{orderNumber}</span>
+              </div>
+            )}
+            {deliveryDate && (
+              <div className="flex items-center justify-between">
+                <span className="text-base text-[#4B5563]">お届け予定日</span>
+                <span className="text-sm font-bold">{deliveryDate}</span>
+              </div>
+            )}
+            {order && (
+              <div className="flex items-center justify-between">
+                <span className="text-base text-[#4B5563]">合計</span>
+                <span className="text-accent text-lg font-bold">
+                  ¥{order.total.toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
         </motion.div>
 
         {/* Donation Complete Message */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="relative mb-4 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-        >
-          {/* Sparkle decorations */}
+        {donationAmount > 0 && (
           <motion.div
-            animate={{ opacity: [0.3, 1, 0.3] }}
-            transition={{ repeat: Infinity, duration: 2 }}
-            className="absolute top-3 right-3 text-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+            className="relative mb-4 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-5 shadow-sm"
           >
-            ✨
-          </motion.div>
-          <motion.div
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ repeat: Infinity, duration: 2 }}
-            className="absolute bottom-3 left-3 text-lg"
-          >
-            ✨
-          </motion.div>
-
-          <div className="mb-4 text-center">
-            <motion.p
-              initial={{ scale: 0.8 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.8, type: "spring" }}
-              className="text-xl font-bold text-emerald-700"
+            <motion.div
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+              className="absolute top-3 right-3 text-lg"
             >
-              🌟 ¥{donationAmount.toLocaleString()}が福岡の保護施設に届けられます！
-            </motion.p>
-          </div>
+              ✨
+            </motion.div>
 
-          <div className="flex items-center gap-4 rounded-xl bg-white/60 p-3">
-            <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl shadow-md">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={rescuedDogImage}
-                alt={rescuedDogName}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-emerald-700">
-                あなたのおかげで{rescuedDogName}の食事3日分になります
+            <div className="mb-4 text-center">
+              <motion.p
+                initial={{ scale: 0.8 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.8, type: "spring" }}
+                className="text-xl font-bold text-emerald-700"
+              >
+                🌟 ¥{donationAmount.toLocaleString()}が保護施設に届けられます！
+              </motion.p>
+              <p className="mt-2 text-sm text-emerald-600">
+                約{mealsProvided}食分の食事を届けることができます
               </p>
-              <p className="mt-1 text-xs text-emerald-500">NPO法人アニマルレスキュー福岡</p>
             </div>
-          </div>
 
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={handleShare}
-            className="mt-4 w-full rounded-xl bg-gradient-to-r from-[#059669] to-[#047857] py-3 font-bold text-white shadow-md shadow-emerald-200 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
-          >
-            📤 寄付をシェアする
-          </motion.button>
-        </motion.div>
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={handleShare}
+              className="mt-2 w-full rounded-xl bg-gradient-to-r from-[#059669] to-[#047857] py-3 font-bold text-white shadow-md shadow-emerald-200 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+            >
+              📤 寄付をシェアする
+            </motion.button>
+          </motion.div>
+        )}
 
         {/* Action Buttons */}
         <motion.div
@@ -242,7 +244,6 @@ export default function OrderCompletePage() {
           </Link>
         </motion.div>
 
-        {/* Upsell Banner */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -262,5 +263,19 @@ export default function OrderCompletePage() {
         </motion.div>
       </div>
     </>
+  );
+}
+
+export default function OrderCompletePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#2A9D8F] border-t-transparent" />
+        </div>
+      }
+    >
+      <OrderCompleteContent />
+    </Suspense>
   );
 }

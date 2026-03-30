@@ -5,23 +5,79 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/components/ui/Toast";
 import type { CartItem } from "@/types";
 import AuthGate from "@/components/features/auth/AuthGate";
 
 function CartContent() {
-  const { loaded, getCart, updateCartQuantity, removeFromCart } = useAuth();
+  const { loaded, getCart, updateCartQuantity, removeFromCart, addToCart } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [items, setItems] = useState<CartItem[]>([]);
   const [giftWrap, setGiftWrap] = useState(false);
+  const [validated, setValidated] = useState(false);
 
   const syncCart = useCallback(() => {
     setItems(getCart());
   }, [getCart]);
 
+  // Validate cart against server on load
+  const validateCart = useCallback(
+    async (cartItems: CartItem[]) => {
+      if (cartItems.length === 0) {
+        setValidated(true);
+        return;
+      }
+      try {
+        const res = await fetch("/api/cart/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: cartItems }),
+        });
+        if (!res.ok) {
+          setValidated(true);
+          return;
+        }
+        const data = await res.json();
+
+        // Remove invalid items
+        if (data.invalidItems?.length > 0) {
+          for (const goodsId of data.invalidItems) {
+            const item = cartItems.find((c) => c.goodsId === goodsId);
+            if (item) removeFromCart(item.id);
+          }
+          toast.show(`${data.invalidItems.length}点の商品が販売終了のため削除されました`);
+        }
+
+        // Update prices if changed
+        if (data.priceUpdates?.length > 0) {
+          for (const update of data.priceUpdates) {
+            const item = cartItems.find((c) => c.goodsId === update.id);
+            if (item) {
+              removeFromCart(item.id);
+              addToCart({ ...item, price: update.newPrice });
+            }
+          }
+          toast.show("一部商品の価格が更新されました");
+        }
+
+        setValidated(true);
+        syncCart();
+      } catch {
+        setValidated(true);
+      }
+    },
+    [removeFromCart, addToCart, syncCart, toast],
+  );
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing cart from external storage
-    if (loaded) syncCart();
-  }, [loaded, syncCart]);
+    if (loaded) {
+      const cartItems = getCart();
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing cart from external storage
+      setItems(cartItems);
+      validateCart(cartItems);
+    }
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleQuantity = (id: string, delta: number) => {
     const item = items.find((c) => c.id === id);
@@ -245,10 +301,10 @@ function CartContent() {
               >
                 <button
                   onClick={() => router.push("/checkout")}
-                  disabled={isEmpty}
+                  disabled={isEmpty || !validated}
                   className="shadow-accent/20 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] py-4 text-lg font-bold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
                 >
-                  レジに進む
+                  {validated ? "レジに進む" : "検証中..."}
                 </button>
                 <Link
                   href="/goods"

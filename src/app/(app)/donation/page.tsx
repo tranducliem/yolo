@@ -1,28 +1,53 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import {
-  mockDonationTags,
-  mockNPOs,
-  mockDonationMonthly,
-  mockDonationReport,
-  mockDonationRankings,
-  mockPersonalDonation,
-} from "@/lib/mockData";
+import { mockDonationTags, mockDonationReport } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/features/auth/AuthGate";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 import DonationBadge from "@/components/features/donation/DonationBadge";
+import { useToast } from "@/components/ui/Toast";
 
-type RankingTab = "monthly" | "total" | "region";
+type RankingTab = "monthly" | "total";
 
 const rankingTabs: { id: RankingTab; label: string }[] = [
   { id: "monthly", label: "今月" },
   { id: "total", label: "累計" },
-  { id: "region", label: "地域別" },
 ];
+
+interface DonationSummary {
+  totalDonated: number;
+  animalsHelped: number;
+  monthlyBreakdown: {
+    month: string;
+    fromSubscription: number;
+    fromGoods: number;
+    fromAdditional: number;
+    total: number;
+  }[];
+  totals: { fromSubscription: number; fromGoods: number; fromAdditional: number };
+  ambassadorMultiplier: number;
+}
+
+interface RankingEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  totalDonated: number;
+  ambassadorLevel: number;
+}
+
+interface NpoEntry {
+  id: string;
+  name: string;
+  location: string;
+  target: string;
+  allocationPercent: number;
+  totalDonated: number;
+}
 
 /* ── Pie Chart (CSS only) ── */
 function DonationPieChart() {
@@ -31,7 +56,6 @@ function DonationPieChart() {
     { label: "医療", pct: 30, color: "#D4A843" },
     { label: "施設", pct: 10, color: "#0D1B2A" },
   ];
-  // conic-gradient
   const stops = segments.reduce<string[]>((result, s, i) => {
     const start = segments.slice(0, i).reduce((sum, seg) => sum + seg.pct, 0);
     const end = start + s.pct;
@@ -43,9 +67,7 @@ function DonationPieChart() {
     <div className="flex items-center gap-4">
       <div
         className="h-24 w-24 flex-shrink-0 rounded-full"
-        style={{
-          background: `conic-gradient(${stops.join(", ")})`,
-        }}
+        style={{ background: `conic-gradient(${stops.join(", ")})` }}
       />
       <div className="space-y-1.5">
         {segments.map((s) => (
@@ -65,18 +87,20 @@ function DonationPieChart() {
 }
 
 /* ── Bar Chart (CSS bars) ── */
-function MonthlyBarChart() {
-  const data = mockDonationMonthly.slice(0, 8).reverse();
-  const maxVal = Math.max(...data.map((d) => d.total));
+function MonthlyBarChart({ data }: { data: { month: string; total: number }[] }) {
+  const chartData = data.slice(0, 8).reverse();
+  const maxVal = Math.max(...chartData.map((d) => d.total), 1);
 
   return (
     <div className="flex h-40 items-end gap-2">
-      {data.map((d) => {
+      {chartData.map((d) => {
         const height = Math.max(4, (d.total / maxVal) * 100);
-        const month = d.month.split("/")[1];
+        const month = d.month.split("-")[1];
         return (
           <div key={d.month} className="flex flex-1 flex-col items-center gap-1">
-            <span className="text-[8px] text-gray-400">¥{Math.round(d.total / 10000)}万</span>
+            <span className="text-[8px] text-gray-400">
+              {d.total >= 10000 ? `¥${Math.round(d.total / 10000)}万` : `¥${d.total}`}
+            </span>
             <motion.div
               initial={{ height: 0 }}
               animate={{ height: `${height}%` }}
@@ -93,22 +117,69 @@ function MonthlyBarChart() {
 
 function DonationContent() {
   const { user } = useAuth();
-  const [rankTab, setRankTab] = useState<RankingTab>("monthly");
+  const toast = useToast();
+  const [rankTab, setRankTab] = useState<RankingTab>("total");
   const [additionalModal, setAdditionalModal] = useState(false);
   const [additionalAmount, setAdditionalAmount] = useState(500);
+  const [summary, setSummary] = useState<DonationSummary | null>(null);
+  const [rankings, setRankings] = useState<RankingEntry[]>([]);
+  const [npos, setNpos] = useState<NpoEntry[]>([]);
 
   const report = mockDonationReport;
-  const personal = mockPersonalDonation[0];
 
-  // Mock rankings for different tabs
-  const rankingsData = mockDonationRankings;
-  // Find user's own rank (mock)
-  const myRank = {
-    rank: 8,
-    name: user?.name || "田中さくら",
-    petName: user?.petName || "モカ",
-    amount: 2340,
-    ambassadorLevel: user?.ambassadorLevel || 3,
+  const fetchSummary = useCallback(async () => {
+    try {
+      const res = await fetch("/api/donation/summary");
+      if (res.ok) setSummary(await res.json());
+    } catch {
+      /* fallback to mock */
+    }
+  }, []);
+
+  const fetchRankings = useCallback(async (period: string) => {
+    try {
+      const res = await fetch(`/api/donation/ranking?period=${period}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRankings(data.rankings || []);
+      }
+    } catch {
+      /* fallback empty */
+    }
+  }, []);
+
+  const fetchNpos = useCallback(async () => {
+    try {
+      const res = await fetch("/api/donation/npos");
+      if (res.ok) {
+        const data = await res.json();
+        setNpos(data.npos || []);
+      }
+    } catch {
+      /* fallback empty */
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching data from API on mount
+    fetchSummary();
+    fetchNpos();
+  }, [fetchSummary, fetchNpos]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching data from API on tab change
+    fetchRankings(rankTab);
+  }, [rankTab, fetchRankings]);
+
+  const totalDonated = summary?.totalDonated ?? user?.donationTotal ?? 0;
+  const animalsHelped = summary?.animalsHelped ?? Math.floor(totalDonated / 100);
+  const totals = summary?.totals ?? { fromSubscription: 0, fromGoods: 0, fromAdditional: 0 };
+  const communityTotal = npos.reduce((sum, n) => sum + n.totalDonated, 0);
+  const communityAnimals = Math.floor(communityTotal / 100);
+
+  const handleAdditionalDonate = async () => {
+    toast.show("追加寄付機能は準備中です");
+    setAdditionalModal(false);
   };
 
   return (
@@ -134,7 +205,7 @@ function DonationContent() {
             transition={{ delay: 0.3, type: "spring", stiffness: 200 }}
             className="mb-1 text-4xl font-extrabold tabular-nums"
           >
-            {user?.donationCount || 47}匹
+            {animalsHelped}匹
           </motion.p>
           <p className="mb-4 text-sm opacity-90">の命を救いました</p>
 
@@ -142,21 +213,21 @@ function DonationContent() {
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm opacity-80">寄付累計</span>
               <span className="text-3xl font-bold tabular-nums">
-                ¥{(user?.donationTotal || 2340).toLocaleString()}
+                ¥{totalDonated.toLocaleString()}
               </span>
             </div>
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs opacity-80">
                 <span>会員費から</span>
-                <span>¥{personal.fromSubscription.toLocaleString()}</span>
+                <span>¥{totals.fromSubscription.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-xs opacity-80">
                 <span>グッズ購入から</span>
-                <span>¥{personal.fromGoods.toLocaleString()}</span>
+                <span>¥{totals.fromGoods.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-xs opacity-80">
                 <span>追加寄付</span>
-                <span>¥{personal.fromAdditional.toLocaleString()}</span>
+                <span>¥{totals.fromAdditional.toLocaleString()}</span>
               </div>
             </div>
           </div>
@@ -184,7 +255,6 @@ function DonationContent() {
             <p className="text-xs text-emerald-600">（{report.npoLocation}）</p>
           </div>
 
-          {/* Before/After photos */}
           <div className="hide-scrollbar mb-4 flex gap-2 overflow-x-auto">
             {report.images.map((img, i) => (
               <div key={i} className="relative flex-shrink-0">
@@ -208,7 +278,6 @@ function DonationContent() {
             </p>
           </div>
 
-          {/* Pie chart */}
           <p className="mb-2 text-xs font-bold text-gray-700">寄付金の使途</p>
           <DonationPieChart />
         </motion.div>
@@ -222,7 +291,6 @@ function DonationContent() {
         >
           <h2 className="mb-3 text-base font-bold text-[#0D1B2A]">🏆 寄付ランキング</h2>
 
-          {/* Tabs */}
           <div className="mb-4 flex gap-2">
             {rankingTabs.map((tab) => (
               <button
@@ -239,78 +307,85 @@ function DonationContent() {
             ))}
           </div>
 
-          {/* Rankings list */}
-          <div className="max-h-[400px] space-y-2 overflow-y-auto">
-            {rankingsData.slice(0, 20).map((r, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.05 * i }}
-                className={`flex items-center gap-3 rounded-xl p-2.5 transition-all duration-200 hover:shadow-sm ${
-                  r.rank === 1
-                    ? "border border-amber-200 bg-amber-50"
-                    : r.rank === 2
-                      ? "border border-gray-200 bg-gray-50"
-                      : r.rank === 3
-                        ? "border border-orange-200 bg-orange-50"
-                        : "bg-gray-50"
-                }`}
-              >
-                <span
-                  className={`w-7 text-center text-sm font-bold ${
+          {rankings.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-400">
+              まだランキングデータがありません
+            </div>
+          ) : (
+            <div className="max-h-[400px] space-y-2 overflow-y-auto">
+              {rankings.map((r, i) => (
+                <motion.div
+                  key={r.userId}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.05 * i }}
+                  className={`flex items-center gap-3 rounded-xl p-2.5 transition-all duration-200 hover:shadow-sm ${
                     r.rank === 1
-                      ? "text-yellow-500"
+                      ? "border border-amber-200 bg-amber-50"
                       : r.rank === 2
-                        ? "text-gray-400"
+                        ? "border border-gray-200 bg-gray-50"
                         : r.rank === 3
-                          ? "text-orange-400"
-                          : "text-gray-400"
+                          ? "border border-orange-200 bg-orange-50"
+                          : "bg-gray-50"
                   }`}
                 >
-                  {r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : `#${r.rank}`}
-                </span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={r.imageUrl}
-                  alt={r.petName}
-                  className="h-9 w-9 rounded-full object-cover"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1">
-                    <p className="truncate text-xs font-bold">{r.name}</p>
-                    {r.ambassadorLevel > 0 && <AmbassadorBadge level={r.ambassadorLevel} compact />}
+                  <span
+                    className={`w-7 text-center text-sm font-bold ${
+                      r.rank === 1
+                        ? "text-yellow-500"
+                        : r.rank === 2
+                          ? "text-gray-400"
+                          : r.rank === 3
+                            ? "text-orange-400"
+                            : "text-gray-400"
+                    }`}
+                  >
+                    {r.rank <= 3 ? ["🥇", "🥈", "🥉"][r.rank - 1] : `#${r.rank}`}
+                  </span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={r.avatarUrl || "/images/default-avatar.png"}
+                    alt={r.displayName}
+                    className="h-9 w-9 rounded-full object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1">
+                      <p className="truncate text-xs font-bold">{r.displayName}</p>
+                      {r.ambassadorLevel > 0 && (
+                        <AmbassadorBadge level={r.ambassadorLevel} compact />
+                      )}
+                    </div>
                   </div>
-                  <p className="text-[10px] text-gray-400">{r.petName}</p>
+                  <span className="text-xs font-bold text-emerald-600">
+                    ¥{r.totalDonated.toLocaleString()}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          {/* Own rank */}
+          {user && totalDonated > 0 && (
+            <div className="sticky bottom-0 mt-3 border-t border-gray-100 bg-white pt-3">
+              <div className="flex items-center gap-3 rounded-xl border border-[#2A9D8F]/20 bg-[#2A9D8F]/10 p-2.5">
+                <span className="w-7 text-center text-sm font-bold text-[#2A9D8F]">-</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-1">
+                    <p className="text-xs font-bold text-[#2A9D8F]">
+                      {user.displayName || user.name || "あなた"}（あなた）
+                    </p>
+                    <AmbassadorBadge level={user.ambassadorLevel ?? 0} compact />
+                  </div>
                 </div>
                 <span className="text-xs font-bold text-emerald-600">
-                  ¥{r.amount.toLocaleString()}
+                  ¥{totalDonated.toLocaleString()}
                 </span>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* Fixed own rank */}
-          <div className="sticky bottom-0 mt-3 border-t border-gray-100 bg-white pt-3">
-            <div className="flex items-center gap-3 rounded-xl border border-[#2A9D8F]/20 bg-[#2A9D8F]/10 p-2.5">
-              <span className="w-7 text-center text-sm font-bold text-[#2A9D8F]">
-                #{myRank.rank}
-              </span>
-              <div className="flex-1">
-                <div className="flex items-center gap-1">
-                  <p className="text-xs font-bold text-[#2A9D8F]">{myRank.name}（あなた）</p>
-                  <AmbassadorBadge level={myRank.ambassadorLevel} compact />
-                </div>
-                <p className="text-[10px] text-gray-400">{myRank.petName}</p>
               </div>
-              <span className="text-xs font-bold text-emerald-600">
-                ¥{myRank.amount.toLocaleString()}
-              </span>
             </div>
-          </div>
+          )}
         </motion.div>
 
-        {/* ═══════ Section 4: Active Donation Tags ═══════ */}
+        {/* ═══════ Section 4: Active Donation Tags (mock - Phase 3) ═══════ */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -381,16 +456,18 @@ function DonationContent() {
               transition={{ delay: 0.5, type: "spring" }}
               className="text-3xl font-bold text-emerald-800 tabular-nums"
             >
-              12,847匹
+              {communityAnimals > 0 ? communityAnimals.toLocaleString() : "0"}匹
             </motion.p>
             <p className="mt-1 text-sm text-emerald-700">の命を救いました</p>
-            <p className="mt-2 text-lg font-bold text-emerald-600">寄付総額: ¥12,847,000</p>
+            <p className="mt-2 text-lg font-bold text-emerald-600">
+              寄付総額: ¥{communityTotal.toLocaleString()}
+            </p>
           </div>
 
           {/* NPO list */}
           <p className="mb-2 text-xs font-bold text-gray-700">パートナーNPO</p>
           <div className="mb-4 space-y-2">
-            {mockNPOs.map((npo) => (
+            {npos.map((npo) => (
               <div key={npo.id} className="flex items-center gap-3 rounded-xl bg-gray-50 p-2.5">
                 <span className="text-lg">
                   {npo.target === "dog" ? "🐶" : npo.target === "cat" ? "🐱" : "🐾"}
@@ -411,7 +488,13 @@ function DonationContent() {
 
           {/* Monthly bar chart */}
           <p className="mb-3 text-xs font-bold text-gray-700">月別寄付推移</p>
-          <MonthlyBarChart />
+          {summary?.monthlyBreakdown && summary.monthlyBreakdown.length > 0 ? (
+            <MonthlyBarChart data={summary.monthlyBreakdown} />
+          ) : (
+            <div className="flex h-40 items-center justify-center text-sm text-gray-400">
+              まだデータがありません
+            </div>
+          )}
         </motion.div>
 
         {/* ═══════ Section 6: CTA ═══════ */}
@@ -478,7 +561,7 @@ function DonationContent() {
             </div>
 
             <button
-              onClick={() => setAdditionalModal(false)}
+              onClick={handleAdditionalDonate}
               className="mb-3 w-full rounded-xl bg-gradient-to-r from-[#059669] to-[#047857] py-3 text-sm font-bold text-white shadow-lg shadow-emerald-200 transition-all duration-200 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98]"
             >
               寄付する

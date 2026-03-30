@@ -7,20 +7,22 @@ export async function POST(request: NextRequest) {
   const body = await request.text();
   const signature = request.headers.get("stripe-signature");
 
-  // Verify webhook signature (skip in dev if no secret)
-  let event: Stripe.Event;
+  // Verify webhook signature — always required
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("[stripe/webhook] STRIPE_WEBHOOK_SECRET is not set");
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+  }
+  if (!signature) {
+    return NextResponse.json({ error: "Missing stripe-signature" }, { status: 400 });
+  }
 
-  if (webhookSecret && webhookSecret !== "whsec_xxxxx" && signature) {
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err) {
-      console.error("[stripe/webhook] Signature verification failed:", err);
-      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
-    }
-  } else {
-    // Dev mode — parse without verification
-    event = JSON.parse(body) as Stripe.Event;
+  let event: Stripe.Event;
+  try {
+    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+  } catch (err) {
+    console.error("[stripe/webhook] Signature verification failed:", err);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
   console.log(`[stripe/webhook] Event: ${event.type}`);
@@ -46,9 +48,13 @@ export async function POST(request: NextRequest) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.mode === "payment") {
-          // EC one-time payment — handled in P2-012
-          console.log(`[stripe/webhook] EC payment completed: ${session.id}`);
+          await handleECPaymentCompleted(session);
         }
+        break;
+      }
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        await handleRefund(charge);
         break;
       }
       default:
@@ -144,6 +150,108 @@ async function handleSubscriptionDeleted(sub: Stripe.Subscription) {
   await supabaseAdmin.from("users").update({ plan: "free" }).eq("id", existingSub.user_id);
 
   console.log(`[stripe/webhook] Subscription deleted: user=${existingSub.user_id} → free`);
+}
+
+async function handleECPaymentCompleted(session: Stripe.Checkout.Session) {
+  const orderId = session.metadata?.order_id;
+  if (!orderId) {
+    console.log("[stripe/webhook] EC payment: no order_id in metadata");
+    return;
+  }
+
+  // Idempotency: check if already processed
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, user_id, status, donation_amount, subtotal")
+    .eq("id", orderId)
+    .single();
+
+  if (!order) {
+    console.error("[stripe/webhook] Order not found:", orderId);
+    return;
+  }
+
+  if (order.status !== "pending") {
+    console.log(`[stripe/webhook] Order ${orderId} already processed (status: ${order.status})`);
+    return;
+  }
+
+  // Update order status
+  await supabaseAdmin
+    .from("orders")
+    .update({
+      status: "processing",
+      stripe_payment_id: session.payment_intent as string,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+
+  // Create goods donation
+  if (order.donation_amount > 0) {
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    await supabaseAdmin.from("donations").insert({
+      user_id: order.user_id,
+      source: "goods",
+      amount: order.donation_amount,
+      order_id: orderId,
+      month,
+      executed: false,
+    });
+
+    // Update user donation total
+    await supabaseAdmin.rpc("increment_user_donation", {
+      user_id_input: order.user_id,
+      amount_input: order.donation_amount,
+    });
+  }
+
+  // Award Paw Points (1 point per ¥100 spent)
+  const pawPoints = Math.floor(order.subtotal / 100);
+  if (pawPoints > 0) {
+    await supabaseAdmin.rpc("increment_user_paw_points", {
+      user_id_input: order.user_id,
+      amount_input: pawPoints,
+    });
+  }
+
+  console.log(
+    `[stripe/webhook] EC order ${orderId} → processing, donation=¥${order.donation_amount}, paw_points=+${pawPoints}`,
+  );
+}
+
+async function handleRefund(charge: Stripe.Charge) {
+  const paymentIntentId = charge.payment_intent as string;
+  if (!paymentIntentId) return;
+
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, user_id, donation_amount, subtotal")
+    .eq("stripe_payment_id", paymentIntentId)
+    .single();
+
+  if (!order) {
+    console.log("[stripe/webhook] Refund: no order found for payment:", paymentIntentId);
+    return;
+  }
+
+  // Update order status
+  await supabaseAdmin
+    .from("orders")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", order.id);
+
+  // Reverse Paw Points
+  const pawPoints = Math.floor(order.subtotal / 100);
+  if (pawPoints > 0) {
+    await supabaseAdmin.rpc("increment_user_paw_points", {
+      user_id_input: order.user_id,
+      amount_input: -pawPoints,
+    });
+  }
+
+  console.log(`[stripe/webhook] Order ${order.id} refunded → cancelled`);
 }
 
 function determinePlan(priceId: string): string {

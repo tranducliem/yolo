@@ -4,17 +4,19 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/components/ui/Toast";
 import type { CartItem } from "@/types";
 import AuthGate from "@/components/features/auth/AuthGate";
 
 type ShippingMethod = "standard" | "express";
-type PaymentMethod = "credit" | "convenience" | "bank";
 
 function CheckoutContent() {
   const { loaded, getCart, clearCart } = useAuth();
   const router = useRouter();
+  const toast = useToast();
   const [items, setItems] = useState<CartItem[]>([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [ordering, setOrdering] = useState(false);
 
   // Shipping form
   const [name, setName] = useState("");
@@ -25,21 +27,11 @@ function CheckoutContent() {
   // Shipping method
   const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("standard");
 
-  // Payment
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("credit");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
-
-  // Paw Points
-  const [usePawPoints, setUsePawPoints] = useState(false);
-
   const syncCart = useCallback(() => {
     setItems(getCart());
   }, [getCart]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initializing cart from external storage
     if (loaded) syncCart();
   }, [loaded, syncCart]);
 
@@ -47,13 +39,47 @@ function CheckoutContent() {
   const isFreeShipping = subtotal >= 5000;
   const shippingCost =
     shippingMethod === "express" ? (isFreeShipping ? 700 : 1200) : isFreeShipping ? 0 : 500;
-  const pawDiscount = usePawPoints ? 100 : 0;
-  const total = Math.max(0, subtotal + shippingCost - pawDiscount);
+  const total = Math.max(0, subtotal + shippingCost);
   const donationAmount = Math.ceil(subtotal * 0.05);
 
-  const handleOrder = () => {
-    clearCart();
-    router.push("/order-complete");
+  const canOrder = items.length > 0 && name.trim() && address.trim();
+
+  const handleOrder = async () => {
+    if (!canOrder) {
+      toast.show("氏名と住所を入力してください");
+      return;
+    }
+
+    setOrdering(true);
+    try {
+      const res = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: items.map((i) => ({
+            goodsId: i.goodsId,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+            variant: i.variant,
+          })),
+          shipping: { name, zip, address, phone },
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.sessionUrl) {
+        clearCart();
+        window.location.href = data.sessionUrl;
+      } else {
+        toast.show(data.error || "注文の作成に失敗しました");
+      }
+    } catch {
+      toast.show("ネットワークエラーが発生しました");
+    } finally {
+      setOrdering(false);
+    }
   };
 
   const inputClass =
@@ -135,7 +161,7 @@ function CheckoutContent() {
           <h2 className="mb-4 text-lg font-bold text-[#0D1B2A]">📍 お届け先</h2>
           <div className="space-y-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-[#9CA3AF]">氏名</label>
+              <label className="mb-1 block text-sm font-medium text-[#9CA3AF]">氏名 *</label>
               <input
                 type="text"
                 value={name}
@@ -155,7 +181,7 @@ function CheckoutContent() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-[#9CA3AF]">住所</label>
+              <label className="mb-1 block text-sm font-medium text-[#9CA3AF]">住所 *</label>
               <input
                 type="text"
                 value={address}
@@ -234,127 +260,23 @@ function CheckoutContent() {
           </div>
         </motion.div>
 
-        {/* Payment Method */}
+        {/* Payment Info */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="mb-4 rounded-2xl bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md"
         >
-          <h2 className="mb-4 text-lg font-bold text-[#0D1B2A]">💰 お支払い方法</h2>
-          <div className="space-y-3">
-            {/* Credit Card */}
-            <label
-              className={`block cursor-pointer rounded-xl border-2 p-3 transition-all duration-200 ${
-                paymentMethod === "credit" ? "border-accent bg-accent/5" : "border-gray-100"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === "credit"}
-                  onChange={() => setPaymentMethod("credit")}
-                  className="accent-[#2A9D8F]"
-                />
-                <span className="text-sm font-medium">💳 クレジットカード</span>
-              </div>
-              <AnimatePresence>
-                {paymentMethod === "credit" && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mt-3 space-y-2 pl-7">
-                      <input
-                        type="text"
-                        value={cardNumber}
-                        onChange={(e) => setCardNumber(e.target.value)}
-                        placeholder="カード番号 0000 0000 0000 0000"
-                        className={inputClass}
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={cardExpiry}
-                          onChange={(e) => setCardExpiry(e.target.value)}
-                          placeholder="MM/YY"
-                          className={inputClass}
-                        />
-                        <input
-                          type="text"
-                          value={cardCvv}
-                          onChange={(e) => setCardCvv(e.target.value)}
-                          placeholder="CVV"
-                          className={inputClass}
-                        />
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </label>
-
-            {/* Convenience Store */}
-            <label
-              className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
-                paymentMethod === "convenience" ? "border-accent bg-accent/5" : "border-gray-100"
-              }`}
-            >
-              <input
-                type="radio"
-                name="payment"
-                checked={paymentMethod === "convenience"}
-                onChange={() => setPaymentMethod("convenience")}
-                className="accent-[#2A9D8F]"
-              />
-              <span className="text-sm font-medium">📱 コンビニ払い</span>
-            </label>
-
-            {/* Bank Transfer */}
-            <label
-              className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 p-3 transition-all duration-200 ${
-                paymentMethod === "bank" ? "border-accent bg-accent/5" : "border-gray-100"
-              }`}
-            >
-              <input
-                type="radio"
-                name="payment"
-                checked={paymentMethod === "bank"}
-                onChange={() => setPaymentMethod("bank")}
-                className="accent-[#2A9D8F]"
-              />
-              <span className="text-sm font-medium">🏦 銀行振込</span>
-            </label>
+          <h2 className="mb-2 text-lg font-bold text-[#0D1B2A]">💰 お支払い方法</h2>
+          <div className="flex items-center gap-3 rounded-xl bg-blue-50 p-3">
+            <span className="text-lg">💳</span>
+            <div>
+              <p className="text-sm font-medium text-blue-800">Stripeセキュア決済</p>
+              <p className="text-xs text-blue-600">
+                クレジットカード情報はStripeが安全に処理します
+              </p>
+            </div>
           </div>
-        </motion.div>
-
-        {/* Paw Points */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="mb-4 rounded-2xl bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md"
-        >
-          <label className="flex cursor-pointer items-center gap-3">
-            <div
-              onClick={() => setUsePawPoints(!usePawPoints)}
-              className={`flex h-7 w-12 cursor-pointer items-center rounded-full px-0.5 transition-all duration-200 ${
-                usePawPoints ? "bg-accent" : "bg-gray-200"
-              }`}
-            >
-              <motion.div
-                animate={{ x: usePawPoints ? 20 : 0 }}
-                className="h-6 w-6 rounded-full bg-white shadow-sm"
-              />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">🐾 100 Paw Pointsを使う</p>
-              <p className="text-xs text-gray-400">-¥100 割引</p>
-            </div>
-          </label>
         </motion.div>
 
         {/* Donation Confirmation */}
@@ -362,7 +284,7 @@ function CheckoutContent() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.28 }}
+            transition={{ delay: 0.25 }}
             className="mb-4 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 shadow-sm transition-all duration-200 hover:shadow-md"
           >
             <div className="flex items-start gap-3">
@@ -417,12 +339,6 @@ function CheckoutContent() {
                 <span>¥{shippingCost.toLocaleString()}</span>
               )}
             </div>
-            {usePawPoints && (
-              <div className="flex justify-between text-green-600">
-                <span>Paw Points割引</span>
-                <span>-¥100</span>
-              </div>
-            )}
             <div className="flex justify-between text-emerald-600">
               <span className="flex items-center gap-1">🌟 寄付額</span>
               <span className="font-bold">¥{donationAmount.toLocaleString()}</span>
@@ -443,12 +359,21 @@ function CheckoutContent() {
         >
           <button
             onClick={handleOrder}
-            disabled={items.length === 0}
+            disabled={!canOrder || ordering}
             className="shadow-accent/30 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] py-4 text-lg font-bold text-white shadow-lg transition-all duration-200 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
           >
-            🌟 注文を確定して動物を救う
+            {ordering ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                処理中...
+              </span>
+            ) : (
+              "🌟 注文を確定して動物を救う"
+            )}
           </button>
-          <p className="mt-3 text-center text-sm text-[#9CA3AF]">🔒 SSL暗号化で保護されています</p>
+          <p className="mt-3 text-center text-sm text-[#9CA3AF]">
+            🔒 Stripe SSL暗号化で保護されています
+          </p>
         </motion.div>
       </div>
     </>

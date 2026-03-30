@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
+import PaywallModal from "@/components/features/auth/PaywallModal";
 
 interface Photo {
   file: File;
@@ -67,6 +68,7 @@ export default function TryPage() {
   const [error, setError] = useState("");
   const [showBlock, setShowBlock] = useState(false);
   const [removingIndex, setRemovingIndex] = useState<number | null>(null);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -483,6 +485,13 @@ export default function TryPage() {
           写真はAI分析のみに使用され、保存されません
         </motion.p>
       </div>
+
+      <PaywallModal
+        isOpen={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        feature="bestshot"
+        requiredPlan="plus"
+      />
     </div>
   );
 }

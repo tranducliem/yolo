@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { mockPlans, ambassadorRanks } from "@/lib/mockData";
+import { PLANS } from "@/config/plans";
+import { ambassadorRanks } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
@@ -13,21 +14,122 @@ function formatPrice(price: number): string {
   return price === 0 ? "¥0" : `¥${price.toLocaleString()}`;
 }
 
+interface SubStatus {
+  plan: string;
+  billingCycle: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  donationPerMonth: number;
+}
+
 export default function SubscriptionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#2A9D8F] border-t-transparent" />
+        </div>
+      }
+    >
+      <SubscriptionContent />
+    </Suspense>
+  );
+}
+
+function SubscriptionContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isLoggedIn, user } = useAuth();
   const toast = useToast();
   const [isYearly, setIsYearly] = useState(false);
   const [authModal, setAuthModal] = useState(false);
-  const currentPlan = user?.plan || "free";
+  const [subStatus, setSubStatus] = useState<SubStatus | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
-  const handleSelect = (_planId: string) => {
-    void _planId;
+  const currentPlan = subStatus?.plan || user?.plan || "free";
+
+  // Fetch subscription status
+  const fetchStatus = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const res = await fetch("/api/subscription/status");
+      if (res.ok) {
+        const data = await res.json();
+        setSubStatus(data);
+      }
+    } catch {
+      // Silently fail - will show free plan
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  // Handle Stripe redirect params
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const cancelled = searchParams.get("cancelled");
+    if (success === "true") {
+      toast.show("🎉 サブスクリプション登録完了！ありがとうございます");
+      fetchStatus();
+      router.replace("/subscription");
+    } else if (cancelled === "true") {
+      toast.show("チェックアウトがキャンセルされました");
+      router.replace("/subscription");
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelect = async (planId: string) => {
     if (!isLoggedIn) {
       setAuthModal(true);
       return;
     }
-    toast.show("Coming Soon: 課金機能は準備中です");
+    if (planId === "free" || planId === currentPlan) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/subscription/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          plan: planId,
+          billingCycle: isYearly ? "yearly" : "monthly",
+        }),
+      });
+
+      const data = await res.json();
+      if (data.sessionUrl) {
+        window.location.href = data.sessionUrl;
+      } else {
+        toast.show(data.error || "エラーが発生しました");
+      }
+    } catch {
+      toast.show("ネットワークエラーが発生しました");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    try {
+      const res = await fetch("/api/subscription/cancel", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        toast.show("サブスクリプションは期間終了時にキャンセルされます");
+        setCancelConfirm(false);
+        fetchStatus();
+      } else {
+        toast.show(data.error || "キャンセルに失敗しました");
+      }
+    } catch {
+      toast.show("ネットワークエラーが発生しました");
+    } finally {
+      setCancelling(false);
+    }
   };
 
   return (
@@ -65,13 +167,13 @@ export default function SubscriptionPage() {
           あなたの活動が、保護動物への寄付につながります
         </motion.p>
 
-        {/* Current plan badge (if logged in) */}
+        {/* Current plan badge */}
         {isLoggedIn && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="mb-4"
+            className="mb-4 flex items-center gap-3"
           >
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#2A9D8F]/10 px-3 py-1.5 text-sm font-bold text-[#2A9D8F]">
               現在のプラン:&nbsp;
@@ -83,6 +185,11 @@ export default function SubscriptionPage() {
                     ? "YOLO FAMILY"
                     : "Free"}
             </span>
+            {subStatus?.cancelAtPeriodEnd && (
+              <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-600">
+                期間終了時にキャンセル予定
+              </span>
+            )}
           </motion.div>
         )}
 
@@ -124,9 +231,9 @@ export default function SubscriptionPage() {
           </div>
         </motion.div>
 
-        {/* Plan cards -- horizontal scroll mobile, 4-col PC */}
+        {/* Plan cards */}
         <div className="hide-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto pb-4 lg:grid lg:grid-cols-4 lg:overflow-visible">
-          {mockPlans.map((plan, i) => {
+          {PLANS.map((plan, i) => {
             const isCurrent = isLoggedIn && plan.id === currentPlan;
             const isRecommended = plan.recommended;
             const price = isYearly ? plan.yearlyPrice : plan.monthlyPrice;
@@ -147,7 +254,6 @@ export default function SubscriptionPage() {
                       : "border border-gray-200 bg-white shadow-sm"
                 }`}
               >
-                {/* Recommended ribbon badge */}
                 {isRecommended && (
                   <div className="absolute -top-1 -right-1 z-10">
                     <div className="relative h-24 w-24 overflow-hidden">
@@ -158,17 +264,14 @@ export default function SubscriptionPage() {
                   </div>
                 )}
 
-                {/* Current plan badge */}
                 {isCurrent && (
                   <span className="absolute -top-3 right-3 rounded-full bg-[#D4A843] px-3 py-1 text-xs font-bold whitespace-nowrap text-white">
                     現在のプラン
                   </span>
                 )}
 
-                {/* Plan name */}
                 <h3 className="mb-1 text-lg font-bold text-[#0D1B2A]">{plan.name}</h3>
 
-                {/* Price */}
                 <div className="mb-3">
                   <span className="text-2xl font-extrabold text-[#0D1B2A] tabular-nums">
                     {formatPrice(price)}
@@ -181,7 +284,6 @@ export default function SubscriptionPage() {
                   )}
                 </div>
 
-                {/* Features */}
                 <ul className="mb-4 space-y-2">
                   {plan.features.map((f, fi) => (
                     <li key={fi} className="flex items-start gap-2 text-sm text-[#4B5563]">
@@ -191,7 +293,6 @@ export default function SubscriptionPage() {
                   ))}
                 </ul>
 
-                {/* Donation line */}
                 {plan.donationAmount > 0 ? (
                   <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <p className="text-sm leading-relaxed font-bold text-[#059669]">
@@ -208,7 +309,6 @@ export default function SubscriptionPage() {
                   </div>
                 )}
 
-                {/* Ambassador line */}
                 <div className="mb-4 flex items-center gap-2 px-1">
                   <AmbassadorBadge level={plan.maxAmbassadorLevel} compact />
                   <p className="text-xs text-gray-500">
@@ -216,17 +316,21 @@ export default function SubscriptionPage() {
                   </p>
                 </div>
 
-                {/* CTA button */}
                 <div className="mt-auto">
                   {isCurrent ? (
                     <div className="rounded-xl bg-gray-100 py-3 text-center text-sm font-medium text-gray-500">
                       現在のプラン
                     </div>
+                  ) : plan.id === "free" ? (
+                    <div className="rounded-xl bg-gray-50 py-3 text-center text-sm text-gray-400">
+                      基本プラン
+                    </div>
                   ) : (
                     <motion.button
                       whileTap={{ scale: 0.97 }}
                       onClick={() => handleSelect(plan.id)}
-                      className={`flex h-12 w-full items-center justify-center rounded-xl py-3 text-center text-sm font-bold transition-all duration-200 ${
+                      disabled={loading}
+                      className={`flex h-12 w-full items-center justify-center rounded-xl py-3 text-center text-sm font-bold transition-all duration-200 disabled:opacity-50 ${
                         isRecommended
                           ? "bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-white hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
                           : plan.donationAmount > 0
@@ -234,7 +338,13 @@ export default function SubscriptionPage() {
                             : "bg-gray-900 text-white hover:scale-[1.02] hover:bg-gray-800 hover:shadow-lg active:scale-[0.98]"
                       }`}
                     >
-                      {plan.donationAmount > 0 ? "🐾 動物を救う" : "このプランにする"}
+                      {loading ? (
+                        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : plan.donationAmount > 0 ? (
+                        "🐾 動物を救う"
+                      ) : (
+                        "このプランにする"
+                      )}
                     </motion.button>
                   )}
                 </div>
@@ -259,11 +369,45 @@ export default function SubscriptionPage() {
           </div>
         </motion.div>
 
+        {/* Cancel subscription section */}
+        {isLoggedIn && currentPlan !== "free" && !subStatus?.cancelAtPeriodEnd && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.55 }}
+            className="mb-4 text-center"
+          >
+            <button
+              onClick={() => setCancelConfirm(true)}
+              className="text-sm text-gray-400 underline transition-colors hover:text-red-500"
+            >
+              サブスクリプションをキャンセル
+            </button>
+          </motion.div>
+        )}
+
+        {/* Cancellation period info */}
+        {subStatus?.cancelAtPeriodEnd && subStatus.currentPeriodEnd && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mb-4 rounded-xl border border-orange-200 bg-orange-50 p-4 text-center"
+          >
+            <p className="text-sm text-orange-700">
+              現在のプランは{" "}
+              <span className="font-bold">
+                {new Date(subStatus.currentPeriodEnd).toLocaleDateString("ja-JP")}
+              </span>{" "}
+              まで有効です。その後、Freeプランに移行します。
+            </p>
+          </motion.div>
+        )}
+
         {/* Donation appeal */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55 }}
+          transition={{ delay: 0.6 }}
           className="mb-8 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 text-center transition-all duration-200 hover:shadow-md"
         >
           <p className="mb-2 text-2xl">🌟</p>
@@ -274,6 +418,37 @@ export default function SubscriptionPage() {
           </p>
         </motion.div>
       </div>
+
+      {/* Cancel confirmation modal */}
+      {cancelConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <h3 className="mb-2 text-lg font-bold text-gray-900">サブスクリプションをキャンセル</h3>
+            <p className="mb-4 text-sm text-gray-600">
+              現在の請求期間の終わりにキャンセルされます。それまでは引き続きご利用いただけます。
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelConfirm(false)}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                戻る
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="flex-1 rounded-xl bg-red-500 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-600 disabled:opacity-50"
+              >
+                {cancelling ? "処理中..." : "キャンセルする"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       <AuthModal isOpen={authModal} onClose={() => setAuthModal(false)} trigger="donation" />
     </>

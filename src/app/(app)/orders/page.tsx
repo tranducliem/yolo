@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { mockOrders } from "@/lib/mockData";
 import AuthGate from "@/components/features/auth/AuthGate";
 import DonationBadge from "@/components/features/donation/DonationBadge";
 
@@ -18,36 +17,73 @@ const tabs: { key: TabKey; label: string }[] = [
 ];
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  new: { label: "新規", color: "text-blue-600", bg: "bg-blue-50" },
+  pending: { label: "決済待ち", color: "text-blue-600", bg: "bg-blue-50" },
   processing: { label: "準備中", color: "text-yellow-600", bg: "bg-yellow-50" },
   shipping: { label: "配送中", color: "text-orange-600", bg: "bg-orange-50" },
   completed: { label: "完了", color: "text-green-600", bg: "bg-green-50" },
   cancelled: { label: "キャンセル", color: "text-red-600", bg: "bg-red-50" },
 };
 
+interface OrderItem {
+  name: string;
+  price: number;
+  quantity: number;
+  imageUrl: string;
+}
+
+interface Order {
+  id: string;
+  order_number: string;
+  status: string;
+  subtotal: number;
+  shipping_fee: number;
+  donation_amount: number;
+  total: number;
+  shipping_name: string;
+  shipping_address: string;
+  tracking_number: string | null;
+  created_at: string;
+  items: OrderItem[];
+}
+
 function OrdersContent() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredOrders = mockOrders.filter((o) => {
+  useEffect(() => {
+    fetch("/api/orders")
+      .then((r) => r.json())
+      .then((d) => setOrders(d.orders || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredOrders = orders.filter((o) => {
     if (activeTab === "all") return true;
     if (activeTab === "shipping")
-      return o.status === "shipping" || o.status === "processing" || o.status === "new";
+      return o.status === "shipping" || o.status === "processing" || o.status === "pending";
     if (activeTab === "completed") return o.status === "completed";
     if (activeTab === "cancelled") return o.status === "cancelled";
     return true;
   });
 
   const isEmpty = filteredOrders.length === 0;
+  const totalDonation = orders.reduce((sum, o) => sum + o.donation_amount, 0);
 
-  // Calculate total donation across all orders
-  const totalDonation = mockOrders.reduce((sum, o) => sum + o.donationAmount, 0);
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#2A9D8F] border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="mx-auto max-w-lg px-4 pt-6 md:max-w-4xl">
-        {/* Header */}
         <div className="mb-6 flex items-center gap-3">
           <button
             onClick={() => router.back()}
@@ -58,29 +94,29 @@ function OrdersContent() {
           <h1 className="flex-1 text-3xl font-bold text-[#0D1B2A]">📦 注文履歴</h1>
         </div>
 
-        {/* Donation summary banner */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 shadow-sm transition-all duration-200 hover:shadow-md"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">🌟</span>
-              <div>
-                <p className="text-xs font-medium text-emerald-600">お買い物からの寄付累計</p>
-                <p className="text-lg font-bold text-emerald-700">
-                  ¥{totalDonation.toLocaleString()}
-                </p>
+        {orders.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-teal-50 p-5 shadow-sm"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🌟</span>
+                <div>
+                  <p className="text-xs font-medium text-emerald-600">お買い物からの寄付累計</p>
+                  <p className="text-lg font-bold text-emerald-700">
+                    ¥{totalDonation.toLocaleString()}
+                  </p>
+                </div>
               </div>
+              <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-500">
+                {orders.filter((o) => o.donation_amount > 0).length}件の寄付
+              </span>
             </div>
-            <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-500">
-              {mockOrders.filter((o) => o.donationAmount > 0).length}件の寄付
-            </span>
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
 
-        {/* Tabs */}
         <div className="hide-scrollbar mb-6 flex gap-2 overflow-x-auto pb-1">
           {tabs.map((tab) => (
             <button
@@ -125,8 +161,9 @@ function OrdersContent() {
               className="space-y-4"
             >
               {filteredOrders.map((order, i) => {
-                const status = statusConfig[order.status];
+                const status = statusConfig[order.status] || statusConfig.pending;
                 const isExpanded = expandedOrder === order.id;
+                const date = new Date(order.created_at).toLocaleDateString("ja-JP");
 
                 return (
                   <motion.div
@@ -136,14 +173,13 @@ function OrdersContent() {
                     transition={{ delay: i * 0.05 }}
                     className="overflow-hidden rounded-2xl bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                   >
-                    {/* Order Header */}
                     <div className="p-5">
                       <div className="mb-3 flex items-center justify-between">
                         <div>
                           <p className="font-mono text-sm font-bold text-[#0D1B2A]">
-                            {order.orderNumber}
+                            {order.order_number}
                           </p>
-                          <p className="text-sm text-[#9CA3AF]">{order.date}</p>
+                          <p className="text-sm text-[#9CA3AF]">{date}</p>
                         </div>
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-bold ${status.color} ${status.bg}`}
@@ -152,28 +188,7 @@ function OrdersContent() {
                         </span>
                       </div>
 
-                      {/* Item Thumbnails */}
                       <div className="mb-3 flex items-center gap-3">
-                        <div className="flex -space-x-2">
-                          {order.items.slice(0, 3).map((item, j) => (
-                            <div
-                              key={j}
-                              className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border-2 border-white bg-gray-100"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={item.imageUrl}
-                                alt={item.name}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                          ))}
-                          {order.items.length > 3 && (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-lg border-2 border-white bg-gray-100 text-xs font-bold text-gray-500">
-                              +{order.items.length - 3}
-                            </div>
-                          )}
-                        </div>
                         <div className="min-w-0 flex-1">
                           {order.items.map((item, j) => (
                             <p key={j} className="truncate text-sm text-gray-600">
@@ -183,14 +198,13 @@ function OrdersContent() {
                         </div>
                       </div>
 
-                      {/* Total + Donation + Expand */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-accent font-bold">
                             ¥{order.total.toLocaleString()}
                           </span>
-                          {order.donationAmount > 0 && (
-                            <DonationBadge amount={order.donationAmount} />
+                          {order.donation_amount > 0 && (
+                            <DonationBadge amount={order.donation_amount} />
                           )}
                         </div>
                         <button
@@ -208,7 +222,6 @@ function OrdersContent() {
                       </div>
                     </div>
 
-                    {/* Expandable Detail */}
                     <AnimatePresence>
                       {isExpanded && (
                         <motion.div
@@ -218,32 +231,29 @@ function OrdersContent() {
                           className="overflow-hidden"
                         >
                           <div className="space-y-3 border-t border-gray-100 px-5 pt-3 pb-5">
-                            {/* Shipping address */}
                             <div>
                               <p className="mb-1 text-xs text-gray-400">お届け先</p>
-                              <p className="text-sm">{order.shippingAddress}</p>
+                              <p className="text-sm">
+                                {order.shipping_name} - {order.shipping_address}
+                              </p>
                             </div>
 
-                            {/* Tracking */}
-                            {order.trackingNumber && (
+                            {order.tracking_number && (
                               <div>
                                 <p className="mb-1 text-xs text-gray-400">追跡番号</p>
                                 <p className="text-accent font-mono text-sm font-bold">
-                                  {order.trackingNumber}
+                                  {order.tracking_number}
                                 </p>
                               </div>
                             )}
 
-                            {/* Shipping progress bar for active orders */}
-                            {(order.status === "shipping" ||
-                              order.status === "processing" ||
-                              order.status === "new") && (
+                            {["pending", "processing", "shipping"].includes(order.status) && (
                               <div>
                                 <p className="mb-2 text-xs text-gray-400">配送状況</p>
                                 <div className="flex items-center gap-1">
-                                  {["注文確認", "準備中", "発送済", "配達完了"].map((step, si) => {
+                                  {["決済確認", "準備中", "発送済", "配達完了"].map((step, si) => {
                                     const progress =
-                                      order.status === "new"
+                                      order.status === "pending"
                                         ? 0
                                         : order.status === "processing"
                                           ? 1
@@ -254,14 +264,10 @@ function OrdersContent() {
                                     return (
                                       <div key={step} className="flex-1">
                                         <div
-                                          className={`h-1.5 rounded-full ${
-                                            active ? "bg-accent" : "bg-gray-200"
-                                          }`}
+                                          className={`h-1.5 rounded-full ${active ? "bg-accent" : "bg-gray-200"}`}
                                         />
                                         <p
-                                          className={`mt-1 text-center text-[10px] ${
-                                            active ? "text-accent font-bold" : "text-gray-300"
-                                          }`}
+                                          className={`mt-1 text-center text-[10px] ${active ? "text-accent font-bold" : "text-gray-300"}`}
                                         >
                                           {step}
                                         </p>
@@ -272,19 +278,10 @@ function OrdersContent() {
                               </div>
                             )}
 
-                            {/* Item breakdown */}
                             <div>
                               <p className="mb-2 text-xs text-gray-400">商品詳細</p>
                               {order.items.map((item, j) => (
                                 <div key={j} className="flex items-center gap-3 py-2">
-                                  <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={item.imageUrl}
-                                      alt={item.name}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  </div>
                                   <div className="flex-1">
                                     <p className="text-sm font-medium">{item.name}</p>
                                     <p className="text-xs text-gray-400">
@@ -298,18 +295,15 @@ function OrdersContent() {
                               ))}
                             </div>
 
-                            {/* Donation detail in expanded view */}
-                            {order.donationAmount > 0 && (
+                            {order.donation_amount > 0 && (
                               <div className="rounded-xl bg-emerald-50 p-3">
                                 <div className="flex items-center gap-2">
                                   <span className="text-lg">🌟</span>
                                   <div>
                                     <p className="text-sm font-bold text-emerald-700">
-                                      ¥{order.donationAmount.toLocaleString()}寄付済み
+                                      ¥{order.donation_amount.toLocaleString()}寄付済み
                                     </p>
-                                    <p className="text-[10px] text-emerald-500">
-                                      NPO法人アニマルレスキュー福岡へ（購入額の5%）
-                                    </p>
+                                    <p className="text-[10px] text-emerald-500">購入額の5%</p>
                                   </div>
                                 </div>
                               </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPets, photobooks } from "@/lib/mockData";
+import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 import ProductMockup from "@/components/features/shop/ProductMockup";
@@ -11,14 +11,42 @@ import type { MockupType } from "@/components/features/shop/ProductMockup";
 
 const me = mockPets[0];
 
-/** Map photobook id → mockup type */
-function toBookMockup(id: string): MockupType {
+interface BookProduct {
+  id: string;
+  sku: string;
+  name: string;
+  price: number;
+  description: string;
+  donation_percent: number;
+  partner: string;
+}
+
+// Book-specific display metadata (not stored in DB)
+const bookMeta: Record<string, { subtitle: string; size: string; pages: string }> = {
+  "book-pocket": {
+    subtitle: "手のひらサイズ。持ち歩ける思い出",
+    size: "L判（89×127mm）",
+    pages: "16〜36ページ",
+  },
+  "book-bunko": {
+    subtitle: "文庫本スタイル。帯付きの本格派",
+    size: "文庫判（105×148mm）",
+    pages: "16〜48ページ",
+  },
+  "book-life": {
+    subtitle: "大判のプレミアム。一生ものの1冊",
+    size: "A5判（148×210mm）",
+    pages: "24〜96ページ",
+  },
+};
+
+function toBookMockup(sku: string): MockupType {
   const map: Record<string, MockupType> = {
     "book-pocket": "book-pocket",
     "book-bunko": "book-bunko",
     "book-life": "book-life",
   };
-  return map[id] ?? "book-pocket";
+  return map[sku] ?? "book-pocket";
 }
 
 export default function BookPage() {
@@ -31,9 +59,20 @@ export default function BookPage() {
   const [page, setPage] = useState(0);
   const [authModal, setAuthModal] = useState(false);
   const [gift, setGift] = useState(false);
+  const [books, setBooks] = useState<BookProduct[]>([]);
 
-  const template = photobooks.find((t) => t.id === tpl);
-  const donationAmount = template ? template.donationAmount : 0;
+  useEffect(() => {
+    fetch("/api/products?category=book")
+      .then((r) => r.json())
+      .then((d) => setBooks(d.products || []))
+      .catch(() => {});
+  }, []);
+
+  const template = books.find((t) => t.id === tpl);
+  const donationAmount = template
+    ? Math.floor(template.price * (template.donation_percent / 100))
+    : 0;
+  const meta = template ? bookMeta[template.sku] : null;
 
   const toggle = (i: number) =>
     setSel((p) => (p.includes(i) ? p.filter((x) => x !== i) : p.length < 20 ? [...p, i] : p));
@@ -189,7 +228,7 @@ export default function BookPage() {
             </motion.div>
           )}
 
-          {/* Step 2: Template selection - with product mockups */}
+          {/* Step 2: Template selection */}
           {step === 2 && (
             <motion.div
               key="step2"
@@ -198,38 +237,44 @@ export default function BookPage() {
               exit={{ opacity: 0, x: 20 }}
             >
               <div className="mb-4 space-y-3">
-                {photobooks.map((t, i) => (
-                  <motion.div
-                    key={t.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    whileTap={{ scale: 0.98 }}
-                    className={`cursor-pointer overflow-hidden rounded-2xl bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
-                      tpl === t.id ? "ring-accent shadow-md ring-4" : ""
-                    }`}
-                    onClick={() => setTpl(t.id)}
-                  >
-                    <div className="flex gap-4 p-4">
-                      <div className="h-28 w-28 flex-shrink-0 overflow-hidden rounded-xl">
-                        <ProductMockup type={toBookMockup(t.id)} className="h-full w-full" />
+                {books.map((t, i) => {
+                  const m = bookMeta[t.sku];
+                  return (
+                    <motion.div
+                      key={t.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`cursor-pointer overflow-hidden rounded-2xl bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+                        tpl === t.id ? "ring-accent shadow-md ring-4" : ""
+                      }`}
+                      onClick={() => setTpl(t.id)}
+                    >
+                      <div className="flex gap-4 p-4">
+                        <div className="h-28 w-28 flex-shrink-0 overflow-hidden rounded-xl">
+                          <ProductMockup type={toBookMockup(t.sku)} className="h-full w-full" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-[#0D1B2A]">{t.name}</p>
+                          <p className="mt-0.5 text-xs text-gray-500">
+                            {m?.subtitle || t.description}
+                          </p>
+                          <p className="mt-1 text-[11px] text-gray-400">
+                            {m?.size} ・ {m?.pages}
+                          </p>
+                          <p className="text-accent mt-1 text-lg font-bold">
+                            ¥{t.price.toLocaleString()}
+                          </p>
+                          <p className="mt-0.5 text-[10px] text-emerald-600">
+                            🌟 ¥{Math.floor(t.price * (t.donation_percent / 100)).toLocaleString()}
+                            が寄付に
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-bold text-[#0D1B2A]">{t.name}</p>
-                        <p className="mt-0.5 text-xs text-gray-500">{t.subtitle}</p>
-                        <p className="mt-1 text-[11px] text-gray-400">
-                          {t.size} ・ {t.pages}
-                        </p>
-                        <p className="text-accent mt-1 text-lg font-bold">
-                          ¥{t.price.toLocaleString()}
-                        </p>
-                        <p className="mt-0.5 text-[10px] text-emerald-600">
-                          🌟 ¥{t.donationAmount.toLocaleString()}が寄付に
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </div>
               <div className="flex gap-2">
                 <motion.button
@@ -339,12 +384,12 @@ export default function BookPage() {
                   className="mb-3 flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-3"
                 >
                   <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg">
-                    <ProductMockup type={toBookMockup(template.id)} className="h-full w-full" />
+                    <ProductMockup type={toBookMockup(template.sku)} className="h-full w-full" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-bold text-[#0D1B2A]">{template.name}</p>
                     <p className="text-[11px] text-gray-400">
-                      {template.size} ・ {template.pages}
+                      {meta?.size} ・ {meta?.pages}
                     </p>
                   </div>
                   <p className="text-accent font-bold">¥{template.price.toLocaleString()}</p>

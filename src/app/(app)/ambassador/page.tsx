@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ambassadorRanks, mockPrefectureAmbassadors, mockLegends } from "@/lib/mockData";
@@ -22,11 +22,29 @@ function groupByRegion() {
   return groups;
 }
 
+interface AmbassadorStatusData {
+  currentLevel: number;
+  levelName: string;
+  multiplier: number;
+  progress: { level: number; name: string; met: boolean; conditions: string[] }[];
+}
+
 function AmbassadorContent() {
   const { user } = useAuth();
-  const userLevel = user?.ambassadorLevel || 3;
+  const [status, setStatus] = useState<AmbassadorStatusData | null>(null);
   const [selectedPref, setSelectedPref] = useState<string | null>(null);
   const [expandedRegion, setExpandedRegion] = useState<string | null>("関東");
+
+  useEffect(() => {
+    fetch("/api/ambassador/status")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.currentLevel !== undefined) setStatus(d);
+      })
+      .catch(() => {});
+  }, []);
+
+  const userLevel = status?.currentLevel ?? user?.ambassadorLevel ?? 0;
 
   const regionGroups = groupByRegion();
 
