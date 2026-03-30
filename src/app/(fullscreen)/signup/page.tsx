@@ -4,17 +4,21 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/components/ui/Toast";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { isLoggedIn, loaded, login } = useAuth();
+  const { isLoggedIn, loaded, login, loginWithEmail, signup } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [petName, setPetName] = useState("");
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [isLogin, setIsLogin] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const toast = useToast();
 
-  // Already logged in -> redirect to authRedirect or /mypage
+  // Already logged in -> redirect
   useEffect(() => {
     if (loaded && isLoggedIn) {
       const redirect = sessionStorage.getItem("authRedirect");
@@ -23,11 +27,83 @@ export default function SignupPage() {
     }
   }, [loaded, isLoggedIn, router]);
 
-  const handleSignup = () => {
-    login({ name: name || "ユーザー", petName: petName || "モカ" });
-    const redirect = sessionStorage.getItem("authRedirect");
+  const getRedirect = () => {
+    const r = sessionStorage.getItem("authRedirect");
     sessionStorage.removeItem("authRedirect");
-    router.push(redirect || "/home");
+    return r || "/home";
+  };
+
+  // Real email signup
+  const handleEmailSignup = async () => {
+    if (!email || !password) {
+      toast.show("メールアドレスとパスワードを入力してください", "error");
+      return;
+    }
+    if (password.length < 6) {
+      toast.show("パスワードは6文字以上で入力してください", "error");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await signup(email, password, {
+      full_name: name || "ユーザー",
+    });
+    setLoading(false);
+
+    if (error) {
+      toast.show(
+        error.message === "User already registered"
+          ? "このメールアドレスは既に登録されています"
+          : error.message,
+        "error",
+      );
+      return;
+    }
+
+    // Create pet if petName provided (pet creation happens after profile is created by trigger)
+    // The useAuth hook will fetch the profile via onAuthStateChange → fetchProfile
+    // Pet creation will be handled after redirect via a separate flow
+
+    router.push(getRedirect());
+  };
+
+  // Real email login
+  const handleEmailLogin = async () => {
+    if (!email || !password) {
+      toast.show("メールアドレスとパスワードを入力してください", "error");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await loginWithEmail(email, password);
+    setLoading(false);
+
+    if (error) {
+      toast.show("メールアドレスまたはパスワードが正しくありません", "error");
+      return;
+    }
+
+    router.push(getRedirect());
+  };
+
+  // OAuth login (Google/Apple)
+  // NOTE: Google/Apple OAuth not yet configured in Supabase.
+  // signInWithOAuth() triggers a page redirect, so error callback never fires.
+  // Using mock login until OAuth credentials are provided by the client.
+  const handleOAuth = () => {
+    login({ name: name || "ユーザー", petName: petName || "モカ" });
+    router.push(getRedirect());
+    // When OAuth is configured, replace above with:
+    // loginWithOAuth(provider);
+  };
+
+  // Submit handler (signup or login based on mode)
+  const handleSubmit = () => {
+    if (isLogin) {
+      handleEmailLogin();
+    } else {
+      handleEmailSignup();
+    }
   };
 
   if (!loaded) {
@@ -118,9 +194,13 @@ export default function SignupPage() {
             transition={{ delay: 0.4 }}
             className="mb-2 text-xl leading-snug font-bold text-[#0D1B2A]"
           >
-            ベストショットを保存して、
-            <br />
-            動物を救おう
+            {isLogin ? "おかえりなさい！" : "ベストショットを保存して、"}
+            {!isLogin && (
+              <>
+                <br />
+                動物を救おう
+              </>
+            )}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0 }}
@@ -128,7 +208,7 @@ export default function SignupPage() {
             transition={{ delay: 0.5 }}
             className="text-sm text-[#4B5563]"
           >
-            YOLOに参加しよう
+            {isLogin ? "ログインしてください" : "YOLOに参加しよう"}
           </motion.p>
         </div>
 
@@ -139,14 +219,16 @@ export default function SignupPage() {
           transition={{ delay: 0.6 }}
         >
           <button
-            onClick={handleSignup}
-            className="mb-3 flex w-full items-center justify-center gap-3 rounded-xl border-2 border-gray-200 bg-white py-3 font-medium text-gray-700 transition-all duration-200 hover:bg-gray-50 hover:shadow-sm"
+            onClick={() => handleOAuth()}
+            disabled={loading}
+            className="mb-3 flex w-full items-center justify-center gap-3 rounded-xl border-2 border-gray-200 bg-white py-3 font-medium text-gray-700 transition-all duration-200 hover:bg-gray-50 hover:shadow-sm disabled:opacity-50"
           >
             <span className="text-lg font-bold">G</span> Googleで続ける
           </button>
           <button
-            onClick={handleSignup}
-            className="mb-3 flex w-full items-center justify-center gap-3 rounded-xl bg-black py-3 font-medium text-white transition-all duration-200 hover:bg-gray-900 hover:shadow-sm"
+            onClick={() => handleOAuth()}
+            disabled={loading}
+            className="mb-3 flex w-full items-center justify-center gap-3 rounded-xl bg-black py-3 font-medium text-white transition-all duration-200 hover:bg-gray-900 hover:shadow-sm disabled:opacity-50"
           >
             <span className="text-lg"></span> Appleで続ける
           </button>
@@ -171,7 +253,7 @@ export default function SignupPage() {
               onClick={() => setShowEmailForm(true)}
               className="w-full rounded-xl border-2 border-[#2A9D8F] py-3 text-sm font-medium text-[#2A9D8F] transition-all duration-200 hover:bg-[#F0FDFB]"
             >
-              メールアドレスで登録
+              メールアドレスで{isLogin ? "ログイン" : "登録"}
             </button>
           ) : (
             <motion.div
@@ -179,20 +261,24 @@ export default function SignupPage() {
               animate={{ opacity: 1, height: "auto" }}
               className="space-y-3"
             >
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="お名前"
-                className="focus:ring-accent/50 focus:border-accent w-full rounded-xl border border-gray-300 px-4 py-3 text-sm transition-all duration-200 focus:ring-2 focus:outline-none"
-              />
-              <input
-                type="text"
-                value={petName}
-                onChange={(e) => setPetName(e.target.value)}
-                placeholder="ペットの名前"
-                className="focus:ring-accent/50 focus:border-accent w-full rounded-xl border border-gray-300 px-4 py-3 text-sm transition-all duration-200 focus:ring-2 focus:outline-none"
-              />
+              {!isLogin && (
+                <>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="お名前"
+                    className="focus:ring-accent/50 focus:border-accent w-full rounded-xl border border-gray-300 px-4 py-3 text-sm transition-all duration-200 focus:ring-2 focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={petName}
+                    onChange={(e) => setPetName(e.target.value)}
+                    placeholder="ペットの名前"
+                    className="focus:ring-accent/50 focus:border-accent w-full rounded-xl border border-gray-300 px-4 py-3 text-sm transition-all duration-200 focus:ring-2 focus:outline-none"
+                  />
+                </>
+              )}
               <input
                 type="email"
                 value={email}
@@ -205,34 +291,53 @@ export default function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="パスワード"
+                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
                 className="focus:ring-accent/50 focus:border-accent w-full rounded-xl border border-gray-300 px-4 py-3 text-sm transition-all duration-200 focus:ring-2 focus:outline-none"
               />
               <motion.button
                 whileTap={{ scale: 0.98 }}
-                onClick={handleSignup}
-                className="shadow-accent/20 h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-base font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+                onClick={handleSubmit}
+                disabled={loading}
+                className="shadow-accent/20 h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] text-base font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-50"
               >
-                登録
+                {loading ? "処理中..." : isLogin ? "ログイン" : "登録"}
               </motion.button>
             </motion.div>
           )}
         </motion.div>
 
+        {/* Toggle login/signup */}
+        <div className="mb-4 text-center">
+          <button
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setShowEmailForm(false);
+            }}
+            className="text-accent text-sm font-medium hover:underline"
+          >
+            {isLogin
+              ? "アカウントをお持ちでない方 → 新規登録"
+              : "すでにアカウントをお持ちの方 → ログイン"}
+          </button>
+        </div>
+
         {/* Donation message */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
-          className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 p-3"
-        >
-          <p className="text-center text-xs leading-relaxed font-medium text-emerald-700">
-            🌟 YOLOでは会員の活動が保護施設への寄付につながります
-          </p>
-        </motion.div>
+        {!isLogin && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.8 }}
+            className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 p-3"
+          >
+            <p className="text-center text-xs leading-relaxed font-medium text-emerald-700">
+              🌟 YOLOでは会員の活動が保護施設への寄付につながります
+            </p>
+          </motion.div>
+        )}
 
         {/* Terms text */}
         <p className="mb-4 text-center text-[10px] leading-relaxed text-gray-400">
-          登録することで、
+          {isLogin ? "ログイン" : "登録"}することで、
           <span className="text-accent">利用規約</span>と
           <span className="text-accent">プライバシーポリシー</span>
           に同意します

@@ -1,17 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PROTECTED_PATHS = [
-  "/home",
-  "/post",
-  "/mypage",
-  "/settings",
-  "/cart",
-  "/checkout",
-  "/orders",
-  "/notifications",
-  "/order-complete",
-];
+// Protected paths — uncomment redirect block below when real auth is active
+// const PROTECTED_PATHS = [
+//   "/home", "/post", "/mypage", "/settings",
+//   "/cart", "/checkout", "/orders", "/notifications", "/order-complete",
+// ];
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -36,9 +30,7 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session — this is the key operation for SSR auth
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  await supabase.auth.getUser();
 
   // Redirect unauthenticated users from protected routes
   // NOTE: Disabled until P1-005 (useAuth refactor) replaces localStorage mock auth.

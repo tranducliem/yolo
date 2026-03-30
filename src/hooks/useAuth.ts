@@ -63,23 +63,47 @@ export function useAuth() {
     useCart();
 
   useEffect(() => {
+    let fetchingProfile = false; // Prevent concurrent fetchProfile calls
+    let mounted = true;
+
+    async function fetchProfile(authId: string) {
+      if (fetchingProfile) return;
+      fetchingProfile = true;
+      try {
+        const { data } = await supabase
+          .from("users")
+          .select("*, pets(*)")
+          .eq("auth_id", authId)
+          .single();
+        if (mounted && data) {
+          setUser(mapToYoloUser(data));
+          localStorage.removeItem(STORAGE_KEYS.USER);
+        }
+      } finally {
+        fetchingProfile = false;
+        if (mounted) setLoaded(true);
+      }
+    }
+
+    function loadMockUser() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.USER);
+        if (raw && mounted) {
+          setUser(JSON.parse(raw));
+        }
+      } catch {
+        /* ignore */
+      }
+      if (mounted) setLoaded(true);
+    }
+
     // Try Supabase Auth first
     supabase.auth.getUser().then(({ data: { user: authUser } }) => {
+      if (!mounted) return;
       if (authUser) {
         fetchProfile(authUser.id);
       } else {
-        // Fallback to localStorage mock auth (until full migration)
-        try {
-          const raw = localStorage.getItem(STORAGE_KEYS.USER);
-          if (raw) {
-            const mockData = JSON.parse(raw);
-
-            setUser(mockData);
-          }
-        } catch {
-          /* ignore */
-        }
-        setLoaded(true);
+        loadMockUser();
       }
     });
 
@@ -87,35 +111,22 @@ export function useAuth() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
       if (session?.user) {
         await fetchProfile(session.user.id);
       } else {
-        // Don't clear mock user on Supabase state change if not using Supabase
         const raw = localStorage.getItem(STORAGE_KEYS.USER);
-        if (!raw) {
-          setUser(null);
-        }
+        if (!raw) setUser(null);
         setLoaded(true);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function fetchProfile(authId: string) {
-    const { data } = await supabase
-      .from("users")
-      .select("*, pets(*)")
-      .eq("auth_id", authId)
-      .single();
-    if (data) {
-      setUser(mapToYoloUser(data));
-      // Clear mock auth if real auth is active
-      localStorage.removeItem(STORAGE_KEYS.USER);
-    }
-    setLoaded(true);
-  }
 
   const isLoggedIn = !!user?.loggedIn;
 
