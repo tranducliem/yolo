@@ -54,7 +54,10 @@ function MyPageInner() {
               <div className="flex items-center gap-2">
                 <h1 className="text-3xl font-bold text-[#0D1B2A]">{user?.petName || me.name}</h1>
                 {user?.ambassadorLevel && (
-                  <AmbassadorBadge level={user.ambassadorLevel} region={user.ambassadorRegion} />
+                  <AmbassadorBadge
+                    level={user.ambassadorLevel}
+                    region={user.ambassadorRegion ?? undefined}
+                  />
                 )}
               </div>
               <p className="text-sm text-[#9CA3AF]">YOLOを始めて3日目</p>
