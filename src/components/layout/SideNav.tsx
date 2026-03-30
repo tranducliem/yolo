@@ -28,46 +28,63 @@ export default function SideNav() {
 
   const me = mockPets[0];
   return (
-    <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 bg-white border-r border-gray-100 shadow-sm flex-col z-50">
+    <aside className="fixed top-0 bottom-0 left-0 z-50 hidden w-60 flex-col border-r border-gray-100 bg-white shadow-sm lg:flex">
       <div className="p-6">
-        <Link href="/home" className="text-2xl font-bold text-accent">🐾 YOLO</Link>
-        <p className="text-[10px] text-gray-400 mt-0.5">ずっと、ともに。</p>
+        <Link href="/home" className="text-accent text-2xl font-bold">
+          🐾 YOLO
+        </Link>
+        <p className="mt-0.5 text-[10px] text-gray-400">ずっと、ともに。</p>
       </div>
       <nav className="flex-1 px-3">
         {links.map((l) => (
-          <Link key={l.href} href={l.href}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl mb-1 text-sm font-medium transition-colors ${
-              path === l.href ? "bg-accent/10 text-accent border-l-4 border-accent" : "text-gray-600 hover:bg-gray-50"
-            }`}>
-            <span className="text-lg">{l.icon}</span>{l.label}
+          <Link
+            key={l.href}
+            href={l.href}
+            className={`mb-1 flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
+              path === l.href
+                ? "bg-accent/10 text-accent border-accent border-l-4"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <span className="text-lg">{l.icon}</span>
+            {l.label}
           </Link>
         ))}
       </nav>
 
       {/* Donation section */}
-      <Link href="/donation" className="mx-3 mb-2 p-3 bg-emerald-50 rounded-xl flex items-center justify-between hover:bg-emerald-100 transition-colors">
+      <Link
+        href="/donation"
+        className="mx-3 mb-2 flex items-center justify-between rounded-xl bg-emerald-50 p-3 transition-colors hover:bg-emerald-100"
+      >
         <div>
-          <p className="text-[10px] text-emerald-600 font-medium">🌟 寄付累計</p>
-          <p className="text-sm font-bold text-emerald-700">¥2,340</p>
+          <p className="text-[10px] font-medium text-emerald-600">🌟 寄付累計</p>
+          <p className="text-sm font-bold text-emerald-700">
+            ¥{(user?.donationTotal ?? 0).toLocaleString()}
+          </p>
         </div>
-        <span className="text-gray-400 text-xs">→</span>
+        <span className="text-xs text-gray-400">→</span>
       </Link>
 
-      <div className="p-4 border-t border-gray-100">
-        <div className="flex items-center gap-3 mb-3">
+      <div className="border-t border-gray-100 p-4">
+        <div className="mb-3 flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={me.imageUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+          <img
+            src={user?.pets?.[0]?.avatarUrl || user?.avatarUrl || me.imageUrl}
+            alt=""
+            className="h-10 w-10 rounded-full object-cover"
+          />
           <div>
             <div className="flex items-center gap-1">
               <p className="text-sm font-bold">{user?.petName || me.name}</p>
-              <AmbassadorBadge level={3} compact />
+              <AmbassadorBadge level={user?.ambassadorLevel ?? 0} compact />
             </div>
-            <p className="text-[10px] text-gray-400">{me.breed}</p>
+            <p className="text-[10px] text-gray-400">{user?.pets?.[0]?.breed || me.breed}</p>
           </div>
         </div>
         <button
           onClick={logout}
-          className="w-full py-2 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+          className="w-full rounded-lg py-2 text-xs text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
         >
           ログアウト
         </button>
