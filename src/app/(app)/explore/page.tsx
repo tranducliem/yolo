@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPosts } from "@/lib/mockData";
 import { EXPLORE_CATEGORIES } from "@/config/explore";
 import { useAuth } from "@/hooks/useAuth";
 import EmotionButtons from "@/components/features/social/EmotionButtons";
@@ -69,32 +68,34 @@ export default function ExplorePage() {
   const [authTrigger, setAuthTrigger] = useState<string | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const [apiPosts, setApiPosts] = useState<ReturnType<typeof toDisplayPost>[]>([]);
+  const [feedLoading, setFeedLoading] = useState(true);
 
   const fetchFeed = useCallback(async (category: string, searchQuery?: string) => {
+    setFeedLoading(true);
     try {
       const params = new URLSearchParams({ category, limit: "40" });
       if (searchQuery) params.set("search", searchQuery);
       const res = await fetch(`/api/posts/feed?${params}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.posts?.length > 0) {
-          setApiPosts(data.posts.map(toDisplayPost));
-        }
+        setApiPosts((data.posts || []).map(toDisplayPost));
+      } else {
+        setApiPosts([]);
       }
     } catch {
-      /* fallback to mock */
+      setApiPosts([]);
+    } finally {
+      setFeedLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
     fetchFeed(cat, search || undefined);
   }, [cat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search
   useEffect(() => {
     if (!search) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
       fetchFeed(cat);
       return;
     }
@@ -102,8 +103,7 @@ export default function ExplorePage() {
     return () => clearTimeout(timer);
   }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Use API posts if available, otherwise mock
-  const posts = apiPosts.length > 0 ? apiPosts : mockPosts;
+  const posts = apiPosts;
 
   const dismissBanner = () => {
     setBannerDismissed(true);
@@ -188,7 +188,32 @@ export default function ExplorePage() {
         </div>
 
         {/* ===== GRID MODE ===== */}
-        {mode === "grid" && (
+        {mode === "grid" && feedLoading && (
+          <div className="grid grid-cols-3 gap-1 md:grid-cols-4">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className={`aspect-square animate-pulse rounded-2xl bg-gray-200 ${i % 5 === 0 ? "col-span-2 row-span-2" : ""}`}
+              />
+            ))}
+          </div>
+        )}
+
+        {mode === "grid" && !feedLoading && posts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="mb-2 text-4xl">📷</p>
+            <p className="mb-1 text-lg font-bold text-gray-700">まだ投稿がありません</p>
+            <p className="mb-4 text-sm text-gray-400">最初の投稿をしてみましょう</p>
+            <Link
+              href="/try"
+              className="rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+            >
+              ✨ うちの子を試す
+            </Link>
+          </div>
+        )}
+
+        {mode === "grid" && !feedLoading && posts.length > 0 && (
           <div className="grid grid-cols-3 gap-1 md:grid-cols-4">
             {posts.map((p, i) => (
               <motion.div
@@ -241,7 +266,21 @@ export default function ExplorePage() {
         )}
 
         {/* ===== FEED MODE (TikTok-style) ===== */}
-        {mode === "feed" && (
+        {mode === "feed" && !feedLoading && posts.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="mb-2 text-4xl">📷</p>
+            <p className="mb-1 text-lg font-bold text-gray-700">まだ投稿がありません</p>
+            <p className="mb-4 text-sm text-gray-400">最初の投稿をしてみましょう</p>
+            <Link
+              href="/try"
+              className="rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+            >
+              ✨ うちの子を試す
+            </Link>
+          </div>
+        )}
+
+        {mode === "feed" && posts.length > 0 && (
           <div ref={feedRef} className="relative" style={{ height: "calc(100vh - 200px)" }}>
             {/* Promo card for non-logged-in users */}
             {isPromoIndex(fi) ? (

@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category") || "total";
+    const _period = searchParams.get("period") || "alltime"; // reserved for future period filtering
     const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 50);
 
     let orderBy: string;

@@ -1,203 +1,176 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import {
-  mockDonationTags,
-  mockNPOs,
-  mockDonationPool,
-  mockDonationExecutions,
-  mockDonationReport,
-  mockDonationMonthly,
-} from "@/lib/mockData";
 
-const executionStatusColor: Record<string, string> = {
-  completed: "bg-green-50 text-green-600",
-  scheduled: "bg-blue-50 text-blue-600",
-  pending: "bg-yellow-50 text-yellow-600",
-};
+interface NPO {
+  id: string;
+  name: string;
+  region: string;
+  target: string;
+  allocation_ratio: number;
+  total_donated: number;
+  bank_info: string | null;
+  created_at: string;
+}
 
-const executionStatusLabel: Record<string, string> = {
-  completed: "実施済み",
-  scheduled: "予定",
-  pending: "保留",
-};
+interface MonthlyDonation {
+  month: string;
+  membership: number;
+  goods: number;
+  additional: number;
+  total: number;
+}
 
 const targetLabel: Record<string, string> = {
-  dog: "🐶 犬",
-  cat: "🐱 猫",
-  both: "🐾 犬猫両方",
+  dog: "Dog",
+  cat: "Cat",
+  both: "Both",
 };
 
 export default function DonationAdminPage() {
+  const [npos, setNpos] = useState<NPO[]>([]);
+  const [monthly, setMonthly] = useState<MonthlyDonation[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showReportPreview, setShowReportPreview] = useState(false);
   const [showNewTagForm, setShowNewTagForm] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagLabel, setNewTagLabel] = useState("");
-  const [reportText, setReportText] = useState(mockDonationReport.text);
+  const [reportText, setReportText] = useState("");
+
+  const fetchDonation = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/donation");
+      if (!res.ok) return;
+      const data = await res.json();
+      setNpos(data.npos || []);
+      setMonthly(data.monthly || []);
+    } catch {
+      // Show empty state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDonation();
+  }, [fetchDonation]);
+
+  // Compute from real data
+  const currentMonthData = monthly.length > 0 ? monthly[0] : null;
+  const totalDonation = currentMonthData?.total || 0;
+  const totalAllDonations = npos.reduce((s, n) => s + (n.total_donated || 0), 0);
 
   const kpis = [
-    { icon: "💰", label: "今月寄付総額", value: "¥523,400" },
-    { icon: "👥", label: "寄付者数", value: "12,847" },
-    { icon: "📊", label: "平均寄付額", value: "¥41" },
-    {
-      icon: "📈",
-      label: "前月比",
-      value: "+15.2%",
-      positive: true,
-    },
+    { icon: "💰", label: "This Month Donations", value: `Y${totalDonation.toLocaleString()}` },
+    { icon: "🏥", label: "NPO Partners", value: String(npos.length) },
+    { icon: "📊", label: "Total All-Time", value: `Y${totalAllDonations.toLocaleString()}` },
+    { icon: "📈", label: "Months Tracked", value: String(monthly.length) },
   ];
 
   // Monthly chart data (last 6 months)
-  const recentMonthly = mockDonationMonthly.slice(0, 6).reverse();
-  const maxMonthly = Math.max(...recentMonthly.map((m) => m.total));
+  const recentMonthly = monthly.slice(0, 6).reverse();
+  const maxMonthly = Math.max(1, ...recentMonthly.map((m) => m.total));
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6 h-9 w-48 animate-pulse rounded-lg bg-gray-200" />
+        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
+          ))}
+        </div>
+        <div className="mb-8 h-64 animate-pulse rounded-2xl bg-gray-100" />
+        <div className="h-48 animate-pulse rounded-2xl bg-gray-100" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
-      <h1 className="text-3xl font-bold text-[#0D1B2A] mb-6">
-        🌟 寄付管理
-      </h1>
+      <h1 className="mb-6 text-3xl font-bold text-[#0D1B2A]">Donation Management</h1>
 
       {/* Section 1: KPI Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map((kpi, i) => (
           <motion.div
             key={kpi.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <span className="text-xl">{kpi.icon}</span>
               <span className="text-sm text-gray-500">{kpi.label}</span>
             </div>
-            <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">
-              {kpi.value}
-              {"positive" in kpi && (
-                <span className="text-sm text-emerald-600 ml-2 inline-flex items-center">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M6 2L10 7H2L6 2Z" fill="currentColor" />
-                  </svg>
-                </span>
-              )}
-            </p>
+            <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">{kpi.value}</p>
           </motion.div>
         ))}
       </div>
 
-      {/* Section 2: Donation Pool Balance */}
+      {/* Section 2: Monthly Donation Trend */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 shadow-sm border border-emerald-200 mb-8"
+        className="mb-8 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 p-6 shadow-sm"
       >
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">
-          💰 寄付プール残高
+        <h3 className="mb-4 text-sm font-semibold text-gray-700">
+          Monthly Donation Trend (6 months)
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-          <div className="bg-white rounded-xl p-4 border border-emerald-100">
-            <p className="text-xs text-gray-500 mb-1">会員費</p>
-            <p className="text-lg font-bold tabular-nums text-emerald-700">
-              ¥{mockDonationPool.fromSubscription.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-emerald-100">
-            <p className="text-xs text-gray-500 mb-1">グッズ</p>
-            <p className="text-lg font-bold tabular-nums text-emerald-700">
-              ¥{mockDonationPool.fromGoods.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-emerald-100">
-            <p className="text-xs text-gray-500 mb-1">追加寄付</p>
-            <p className="text-lg font-bold tabular-nums text-emerald-700">
-              ¥{mockDonationPool.fromAdditional.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-gray-200 opacity-50">
-            <p className="text-xs text-gray-400 mb-1">
-              スポンサー(Phase2)
-            </p>
-            <p className="text-lg font-bold text-gray-400">
-              ¥{mockDonationPool.fromSponsor.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-[#2A9D8F] rounded-xl p-4 text-white">
-            <p className="text-xs text-white/80 mb-1">合計</p>
-            <p className="text-lg font-bold tabular-nums">
-              ¥{mockDonationPool.total.toLocaleString()}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-6 text-sm text-gray-600">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">前回実施日:</span>
-            <span className="font-medium">
-              {mockDonationPool.lastExecutionDate}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">次回実施予定:</span>
-            <span className="font-medium text-[#2A9D8F]">
-              {mockDonationPool.nextExecutionDate}
-            </span>
-          </div>
-        </div>
-
-        {/* Monthly donation breakdown chart */}
-        <div className="mt-6">
-          <h4 className="text-xs font-semibold text-gray-600 mb-3">
-            月別寄付推移（6ヶ月）
-          </h4>
+        {recentMonthly.length === 0 ? (
+          <div className="py-8 text-center text-gray-400">No monthly data yet</div>
+        ) : (
           <div className="space-y-2">
             {recentMonthly.map((m) => (
               <div key={m.month} className="flex items-center gap-3">
-                <span className="text-xs text-gray-500 w-16">{m.month}</span>
-                <div className="flex-1 flex h-5 rounded-sm overflow-hidden">
+                <span className="w-16 text-xs text-gray-500">{m.month}</span>
+                <div className="flex h-5 flex-1 overflow-hidden rounded-sm">
                   <div
                     className="bg-[#2A9D8F]"
                     style={{
-                      width: `${(m.fromSubscription / maxMonthly) * 100}%`,
+                      width: `${(m.membership / maxMonthly) * 100}%`,
                     }}
-                    title={`会員費 ¥${m.fromSubscription.toLocaleString()}`}
+                    title={`Membership Y${m.membership.toLocaleString()}`}
                   />
                   <div
                     className="bg-emerald-400"
                     style={{
-                      width: `${(m.fromGoods / maxMonthly) * 100}%`,
+                      width: `${(m.goods / maxMonthly) * 100}%`,
                     }}
-                    title={`グッズ ¥${m.fromGoods.toLocaleString()}`}
+                    title={`Goods Y${m.goods.toLocaleString()}`}
                   />
                   <div
                     className="bg-teal-300"
                     style={{
-                      width: `${(m.fromAdditional / maxMonthly) * 100}%`,
+                      width: `${(m.additional / maxMonthly) * 100}%`,
                     }}
-                    title={`追加 ¥${m.fromAdditional.toLocaleString()}`}
+                    title={`Additional Y${m.additional.toLocaleString()}`}
                   />
                 </div>
-                <span className="text-xs font-medium text-gray-700 w-24 text-right">
-                  ¥{m.total.toLocaleString()}
+                <span className="w-24 text-right text-xs font-medium text-gray-700">
+                  Y{m.total.toLocaleString()}
                 </span>
               </div>
             ))}
+            <div className="mt-2 flex justify-center gap-4">
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-sm bg-[#2A9D8F]" />
+                <span className="text-[10px] text-gray-500">Membership</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-sm bg-emerald-400" />
+                <span className="text-[10px] text-gray-500">Goods</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-sm bg-teal-300" />
+                <span className="text-[10px] text-gray-500">Additional</span>
+              </div>
+            </div>
           </div>
-          <div className="flex gap-4 mt-2 justify-center">
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-sm bg-[#2A9D8F]" />
-              <span className="text-[10px] text-gray-500">会員費</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-sm bg-emerald-400" />
-              <span className="text-[10px] text-gray-500">グッズ</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-sm bg-teal-300" />
-              <span className="text-[10px] text-gray-500">追加寄付</span>
-            </div>
-          </div>
-        </div>
+        )}
       </motion.div>
 
       {/* Section 3: NPO Management */}
@@ -205,77 +178,71 @@ export default function DonationAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-8"
+        className="mb-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700">
-            🏥 NPO管理
-          </h3>
-          <button className="bg-[#2A9D8F] text-white text-xs px-4 py-2 rounded-xl hover:opacity-90 transition-all duration-200">
-            NPOを追加
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">NPO Management</h3>
+          <button className="rounded-xl bg-[#2A9D8F] px-4 py-2 text-xs text-white transition-all duration-200 hover:opacity-90">
+            Add NPO
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#0D1B2A] text-white">
-                <th className="text-left py-3 px-2 font-medium rounded-tl-lg">
-                  NPO名
-                </th>
-                <th className="text-left py-3 px-2 font-medium">
-                  所在地
-                </th>
-                <th className="text-center py-3 px-2 font-medium">
-                  対象
-                </th>
-                <th className="text-center py-3 px-2 font-medium">
-                  配分率
-                </th>
-                <th className="text-right py-3 px-2 font-medium rounded-tr-lg">
-                  累計寄付額
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockNPOs.map((npo, npoIdx) => (
-                <tr
-                  key={npo.id}
-                  className={`border-b border-gray-50 hover:bg-gray-100 transition-all duration-200 ${npoIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
-                >
-                  <td className="py-3 px-2 font-medium text-gray-900">
-                    {npo.name}
-                  </td>
-                  <td className="py-3 px-2 text-gray-600">{npo.location}</td>
-                  <td className="py-3 px-2 text-center">
-                    {targetLabel[npo.target]}
-                  </td>
-                  <td className="py-3 px-2">
-                    <div className="flex items-center gap-2 justify-center">
-                      <div className="w-24 bg-gray-100 rounded-full h-3">
-                        <div
-                          className="bg-[#2A9D8F] h-3 rounded-full transition-all"
-                          style={{ width: `${npo.allocationPercent}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-bold text-gray-700 w-8">
-                        {npo.allocationPercent}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-2 text-right font-medium tabular-nums text-emerald-700">
-                    ¥{npo.totalDonated.toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-xs text-gray-400">配分率合計:</span>
-          <span className="text-xs font-bold text-[#2A9D8F]">
-            {mockNPOs.reduce((s, n) => s + n.allocationPercent, 0)}%
-          </span>
-        </div>
+        {npos.length === 0 ? (
+          <div className="py-12 text-center text-gray-400">No NPOs registered yet</div>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#0D1B2A] text-white">
+                    <th className="rounded-tl-lg px-2 py-3 text-left font-medium">NPO Name</th>
+                    <th className="px-2 py-3 text-left font-medium">Region</th>
+                    <th className="px-2 py-3 text-center font-medium">Target</th>
+                    <th className="px-2 py-3 text-center font-medium">Allocation</th>
+                    <th className="rounded-tr-lg px-2 py-3 text-right font-medium">
+                      Total Donated
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {npos.map((npo, npoIdx) => (
+                    <tr
+                      key={npo.id}
+                      className={`border-b border-gray-50 transition-all duration-200 hover:bg-gray-100 ${npoIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
+                    >
+                      <td className="px-2 py-3 font-medium text-gray-900">{npo.name}</td>
+                      <td className="px-2 py-3 text-gray-600">{npo.region}</td>
+                      <td className="px-2 py-3 text-center">
+                        {targetLabel[npo.target] || npo.target}
+                      </td>
+                      <td className="px-2 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="h-3 w-24 rounded-full bg-gray-100">
+                            <div
+                              className="h-3 rounded-full bg-[#2A9D8F] transition-all"
+                              style={{ width: `${npo.allocation_ratio}%` }}
+                            />
+                          </div>
+                          <span className="w-8 text-xs font-bold text-gray-700">
+                            {npo.allocation_ratio}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-3 text-right font-medium text-emerald-700 tabular-nums">
+                        Y{(npo.total_donated || 0).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-xs text-gray-400">Total allocation:</span>
+              <span className="text-xs font-bold text-[#2A9D8F]">
+                {npos.reduce((s, n) => s + (n.allocation_ratio || 0), 0)}%
+              </span>
+            </div>
+          </>
+        )}
       </motion.div>
 
       {/* Section 4: Monthly Report Creation */}
@@ -283,19 +250,15 @@ export default function DonationAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-8"
+        className="mb-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700">
-            📋 月次レポート作成
-          </h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Monthly Report</h3>
           <button
             onClick={() => setShowReportPreview(!showReportPreview)}
-            className="bg-[#2A9D8F] text-white text-xs px-4 py-2 rounded-xl hover:opacity-90 transition-all duration-200"
+            className="rounded-xl bg-[#2A9D8F] px-4 py-2 text-xs text-white transition-all duration-200 hover:opacity-90"
           >
-            {showReportPreview
-              ? "プレビューを閉じる"
-              : "今月のレポートを作成"}
+            {showReportPreview ? "Close Preview" : "Create Report"}
           </button>
         </div>
 
@@ -305,82 +268,27 @@ export default function DonationAdminPage() {
             animate={{ opacity: 1, height: "auto" }}
             className="overflow-hidden"
           >
-            <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-2xl">🌟</span>
-                <div>
-                  <h4 className="text-lg font-bold text-gray-900">
-                    {mockDonationReport.month} 寄付レポート
-                  </h4>
-                  <p className="text-xs text-gray-500">
-                    {mockDonationReport.npoName}（{mockDonationReport.npoLocation}）
-                  </p>
-                </div>
-              </div>
-
-              {/* Photo upload area */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                {mockDonationReport.images.map((img, i) => (
-                  <div
-                    key={i}
-                    className="aspect-square rounded-xl overflow-hidden"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img}
-                      alt={`レポート画像${i + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                  <p className="text-xs text-gray-400">🐶 保護犬</p>
-                  <p className="text-xl font-bold text-gray-900">
-                    {mockDonationReport.dogCount}匹
-                  </p>
-                </div>
-                <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                  <p className="text-xs text-gray-400">🐱 保護猫</p>
-                  <p className="text-xl font-bold text-gray-900">
-                    {mockDonationReport.catCount}匹
-                  </p>
-                </div>
-                <div className="bg-white rounded-lg p-3 text-center border border-gray-100">
-                  <p className="text-xs text-gray-400">💰 寄付額</p>
-                  <p className="text-xl font-bold text-[#2A9D8F]">
-                    ¥{mockDonationReport.totalAmount.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
               <div className="mb-4">
-                <label className="block text-xs text-gray-500 mb-1">
-                  レポート本文
-                </label>
+                <label className="mb-1 block text-xs text-gray-500">Report Text</label>
                 <textarea
                   value={reportText}
                   onChange={(e) => setReportText(e.target.value)}
                   rows={4}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] resize-none"
+                  placeholder="Enter report content..."
+                  className="w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                 />
               </div>
 
               <div className="mb-4">
-                <label className="block text-xs text-gray-500 mb-1">
-                  写真をアップロード
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-[#2A9D8F] transition-colors cursor-pointer">
-                  <p className="text-gray-400 text-sm">
-                    📷 クリックまたはドラッグ&ドロップ
-                  </p>
+                <label className="mb-1 block text-xs text-gray-500">Upload Photos</label>
+                <div className="cursor-pointer rounded-xl border-2 border-dashed border-gray-300 p-6 text-center transition-colors hover:border-[#2A9D8F]">
+                  <p className="text-sm text-gray-400">Click or drag & drop</p>
                 </div>
               </div>
 
-              <button className="w-full bg-[#2A9D8F] text-white py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition-all duration-200">
-                全ユーザーに配信
+              <button className="w-full rounded-xl bg-[#2A9D8F] py-3 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90">
+                Distribute to All Users
               </button>
             </div>
           </motion.div>
@@ -392,17 +300,15 @@ export default function DonationAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.25 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-8"
+        className="mb-8 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700">
-            🏷️ 寄付タグ管理
-          </h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Donation Tag Management</h3>
           <button
             onClick={() => setShowNewTagForm(!showNewTagForm)}
-            className="bg-[#2A9D8F] text-white text-xs px-4 py-2 rounded-xl hover:opacity-90 transition-all duration-200"
+            className="rounded-xl bg-[#2A9D8F] px-4 py-2 text-xs text-white transition-all duration-200 hover:opacity-90"
           >
-            新しい寄付タグを作成
+            Create New Tag
           </button>
         </div>
 
@@ -410,99 +316,40 @@ export default function DonationAdminPage() {
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
-            className="overflow-hidden mb-4"
+            className="mb-4 overflow-hidden"
           >
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="mb-3 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    タグ名
-                  </label>
+                  <label className="mb-1 block text-xs text-gray-500">Tag Name</label>
                   <input
                     type="text"
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
                     placeholder="#YOLO..."
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    ラベル
-                  </label>
+                  <label className="mb-1 block text-xs text-gray-500">Label</label>
                   <input
                     type="text"
                     value={newTagLabel}
                     onChange={(e) => setNewTagLabel(e.target.value)}
-                    placeholder="表示名..."
-                    className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+                    placeholder="Display name..."
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                   />
                 </div>
               </div>
-              <button className="bg-[#2A9D8F] text-white text-xs px-4 py-2 rounded-xl hover:opacity-90 transition-all duration-200">
-                タグを作成
+              <button className="rounded-xl bg-[#2A9D8F] px-4 py-2 text-xs text-white transition-all duration-200 hover:opacity-90">
+                Create Tag
               </button>
             </div>
           </motion.div>
         )}
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#0D1B2A] text-white">
-                <th className="text-left py-3 px-2 font-medium rounded-tl-lg">
-                  タグ
-                </th>
-                <th className="text-left py-3 px-2 font-medium">
-                  ラベル
-                </th>
-                <th className="text-right py-3 px-2 font-medium">
-                  投稿数
-                </th>
-                <th className="text-right py-3 px-2 font-medium">
-                  寄付総額
-                </th>
-                <th className="text-center py-3 px-2 font-medium rounded-tr-lg">
-                  ステータス
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockDonationTags.map((tag, tagIdx) => (
-                <tr
-                  key={tag.id}
-                  className={`border-b border-gray-50 hover:bg-gray-100 transition-all duration-200 ${tagIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
-                >
-                  <td className="py-3 px-2 font-medium text-[#2A9D8F]">
-                    {tag.tag}
-                    {tag.isSponsor && (
-                      <span className="ml-2 bg-yellow-50 text-yellow-600 text-[10px] px-1.5 py-0.5 rounded-full">
-                        スポンサー
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-gray-600">{tag.label}</td>
-                  <td className="py-3 px-2 text-right text-gray-700">
-                    {tag.posts.toLocaleString()}
-                  </td>
-                  <td className="py-3 px-2 text-right font-medium tabular-nums text-emerald-700">
-                    ¥{tag.donationTotal.toLocaleString()}
-                  </td>
-                  <td className="py-3 px-2 text-center">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        tag.isActive
-                          ? "bg-green-50 text-green-600"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
-                      {tag.isActive ? "🟢 有効" : "⚪ 無効"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="py-8 text-center text-sm text-gray-400">
+          No donation tags configured. Tags will be managed via the database.
         </div>
       </motion.div>
 
@@ -511,58 +358,16 @@ export default function DonationAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+        className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-700">
-            📜 実行履歴
-          </h3>
-          <button className="bg-gray-100 text-gray-600 text-xs px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors">
-            CSVエクスポート
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Execution History</h3>
+          <button className="rounded-lg bg-gray-100 px-4 py-2 text-xs text-gray-600 transition-colors hover:bg-gray-200">
+            CSV Export
           </button>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#0D1B2A] text-white">
-                <th className="text-left py-3 px-2 font-medium rounded-tl-lg">
-                  実施日
-                </th>
-                <th className="text-left py-3 px-2 font-medium">
-                  NPO
-                </th>
-                <th className="text-right py-3 px-2 font-medium">
-                  金額
-                </th>
-                <th className="text-center py-3 px-2 font-medium rounded-tr-lg">
-                  ステータス
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {mockDonationExecutions.map((exec, i) => (
-                <tr
-                  key={`${exec.date}-${exec.npo}-${i}`}
-                  className={`border-b border-gray-50 hover:bg-gray-100 transition-all duration-200 ${i % 2 === 1 ? "bg-gray-50/50" : ""}`}
-                >
-                  <td className="py-3 px-2 text-gray-700">{exec.date}</td>
-                  <td className="py-3 px-2 text-gray-600 text-xs">
-                    {exec.npo}
-                  </td>
-                  <td className="py-3 px-2 text-right font-medium tabular-nums text-emerald-700">
-                    ¥{exec.amount.toLocaleString()}
-                  </td>
-                  <td className="py-3 px-2 text-center">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${executionStatusColor[exec.status]}`}
-                    >
-                      {executionStatusLabel[exec.status]}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="py-8 text-center text-sm text-gray-400">
+          No execution history yet. Records will appear after donations are processed.
         </div>
       </motion.div>
     </div>

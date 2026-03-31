@@ -1,15 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 import ProductMockup from "@/components/features/shop/ProductMockup";
 import type { MockupType } from "@/components/features/shop/ProductMockup";
 
-const me = mockPets[0];
+interface PetMe {
+  id: string;
+  name: string;
+  imageUrl: string;
+  photos: string[];
+}
 
 interface BookProduct {
   id: string;
@@ -60,13 +65,30 @@ export default function BookPage() {
   const [authModal, setAuthModal] = useState(false);
   const [gift, setGift] = useState(false);
   const [books, setBooks] = useState<BookProduct[]>([]);
+  const [me, setMe] = useState<PetMe | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
+
+  const fetchMe = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pets/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pet) setMe(data.pet);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setMeLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
+    fetchMe();
     fetch("/api/products?category=book")
       .then((r) => r.json())
       .then((d) => setBooks(d.products || []))
       .catch(() => {});
-  }, []);
+  }, [fetchMe]);
 
   const template = books.find((t) => t.id === tpl);
   const donationAmount = template
@@ -82,15 +104,18 @@ export default function BookPage() {
     | { type: "photo"; url: string; comment: string; date: string }
     | { type: "end"; text: string };
 
+  const petName = me?.name || "ペット";
+  const petPhotos = me?.photos || [];
+
   const pages: Page[] = [
-    { type: "cover", title: `${me.name}のフォトブック`, sub: "YOLO Book" },
+    { type: "cover", title: `${petName}のフォトブック`, sub: "YOLO Book" },
     ...sel.map((idx) => ({
       type: "photo" as const,
-      url: me.photos[idx % me.photos.length],
+      url: petPhotos[idx % Math.max(petPhotos.length, 1)] || "/images/default-avatar.png",
       comment: "AIが選んだベストショット",
       date: "2026年3月",
     })),
-    { type: "end", text: `${me.name}と過ごした47日間の記録` },
+    { type: "end", text: `${petName}と過ごした日々の記録` },
   ];
 
   const handleOrder = () => {
@@ -104,7 +129,7 @@ export default function BookPage() {
         name: `フォトブック（${template.name}）`,
         price: template.price,
         quantity: 1,
-        imageUrl: me.imageUrl,
+        imageUrl: me?.imageUrl || "/images/default-avatar.png",
         variant: gift ? "ギフト" : undefined,
       });
       router.push("/cart");
@@ -178,53 +203,80 @@ export default function BookPage() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
             >
-              <p className="mb-2 text-sm text-[#4B5563]">
-                {sel.length}枚選択中（8枚以上で注文可能）
-              </p>
-              <div className="mb-4 grid grid-cols-3 gap-1">
-                {me.photos.map((url, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg transition-all ${
-                      sel.includes(i) ? "ring-accent ring-4" : ""
-                    }`}
-                    onClick={() => toggle(i)}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                    {sel.includes(i) && (
+              {meLoading ? (
+                <div className="space-y-3">
+                  <div className="h-5 w-40 animate-pulse rounded bg-gray-200" />
+                  <div className="grid grid-cols-3 gap-1">
+                    {Array.from({ length: 9 }).map((_, i) => (
+                      <div key={i} className="aspect-square animate-pulse rounded-lg bg-gray-200" />
+                    ))}
+                  </div>
+                </div>
+              ) : petPhotos.length > 0 ? (
+                <>
+                  <p className="mb-2 text-sm text-[#4B5563]">
+                    {sel.length}枚選択中（8枚以上で注文可能）
+                  </p>
+                  <div className="mb-4 grid grid-cols-3 gap-1">
+                    {petPhotos.map((url, i) => (
                       <motion.div
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="bg-accent absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        key={i}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: i * 0.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg transition-all ${
+                          sel.includes(i) ? "ring-accent ring-4" : ""
+                        }`}
+                        onClick={() => toggle(i)}
                       >
-                        {sel.indexOf(i) + 1}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                        {sel.includes(i) && (
+                          <motion.div
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className="bg-accent absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                          >
+                            {sel.indexOf(i) + 1}
+                          </motion.div>
+                        )}
                       </motion.div>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-              <label className="mb-4 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={inclIllust}
-                  onChange={(e) => setInclIllust(e.target.checked)}
-                  className="accent-accent"
-                />
-                イラスト版も含める
-              </label>
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => setStep(2)}
-                disabled={sel.length < 8}
-                className="h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
-              >
-                次へ（{sel.length}枚）
-              </motion.button>
+                    ))}
+                  </div>
+                  <label className="mb-4 flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={inclIllust}
+                      onChange={(e) => setInclIllust(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    イラスト版も含める
+                  </label>
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setStep(2)}
+                    disabled={sel.length < 8}
+                    className="h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
+                  >
+                    次へ（{sel.length}枚）
+                  </motion.button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <p className="mb-2 text-4xl">📷</p>
+                  <p className="mb-1 text-lg font-bold text-gray-700">写真がありません</p>
+                  <p className="mb-4 text-sm text-gray-400">
+                    ベストショットを撮って写真を追加しましょう
+                  </p>
+                  <Link
+                    href="/try"
+                    className="rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+                  >
+                    ✨ ベストショットを撮る
+                  </Link>
+                </div>
+              )}
             </motion.div>
           )}
 
@@ -314,7 +366,7 @@ export default function BookPage() {
                   <div className="text-center">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={me.imageUrl}
+                      src={me?.imageUrl || "/images/default-avatar.png"}
                       alt=""
                       className="mx-auto mb-4 h-40 w-40 rounded-xl object-cover shadow"
                     />

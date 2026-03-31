@@ -5,6 +5,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import SideNav from "@/components/layout/SideNav";
 import BottomNav from "@/components/layout/BottomNav";
+import PushNotificationSetup from "@/components/features/notifications/PushNotificationSetup";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { isLoggedIn } = useAuth();
@@ -18,6 +19,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Footer />
       </div>
       <BottomNav />
+      <PushNotificationSetup />
     </div>
   );
 }

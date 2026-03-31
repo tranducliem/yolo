@@ -1,14 +1,37 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
 type Tab = "photos" | "badges" | "stats";
+
+interface PetDetail {
+  id: string;
+  name: string;
+  species: "dog" | "cat";
+  breed: string;
+  ownerName: string;
+  imageUrl: string;
+  photos: string[];
+  score: number;
+  smileScore: number;
+  loveScore: number;
+  rareScore: number;
+  followers: number;
+  following: number;
+  postCount: number;
+  pawPoints: number;
+  crownCount: number;
+  battleCount: number;
+  dareCount: number;
+  donationCount: number;
+  ambassadorLevel?: number;
+  ambassadorRegion?: string;
+}
 
 export default function PetDetailPage() {
   const { id } = useParams();
@@ -17,16 +40,71 @@ export default function PetDetailPage() {
   const [tab, setTab] = useState<Tab>("photos");
   const [following, setFollowing] = useState(false);
   const [authModal, setAuthModal] = useState<string | null>(null);
-  const pet = mockPets.find((p) => p.id === id) || mockPets[0];
+  const [pet, setPet] = useState<PetDetail | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch real pet data (enhance mock with DB data when available)
-  useEffect(() => {
-    if (id) {
-      fetch(`/api/pets/${id}`)
-        .then((r) => r.json())
-        .catch(() => {});
+  const fetchPet = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/pets/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pet) setPet(data.pet);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setLoading(false);
     }
   }, [id]);
+
+  useEffect(() => {
+    fetchPet();
+  }, [fetchPet]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-lg px-4 pt-4 md:max-w-4xl">
+        <div className="mb-4 flex items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="text-sm text-[#9CA3AF] transition-all duration-200 hover:text-[#4B5563]"
+          >
+            ← 戻る
+          </button>
+        </div>
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="flex flex-col items-center">
+            <div className="mb-3 h-28 w-28 animate-pulse rounded-full bg-gray-200" />
+            <div className="mb-2 h-6 w-32 animate-pulse rounded bg-gray-200" />
+            <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pet) {
+    return (
+      <div className="mx-auto max-w-lg px-4 pt-4 md:max-w-4xl">
+        <div className="mb-4 flex items-center gap-3">
+          <button
+            onClick={() => router.back()}
+            className="text-sm text-[#9CA3AF] transition-all duration-200 hover:text-[#4B5563]"
+          >
+            ← 戻る
+          </button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <p className="mb-2 text-4xl">🐾</p>
+          <p className="mb-1 text-lg font-bold text-gray-700">ペットが見つかりません</p>
+          <p className="text-sm text-gray-400">
+            このページは存在しないか、削除された可能性があります
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const radar = [
     { label: "笑顔度", v: pet.smileScore / 5 },

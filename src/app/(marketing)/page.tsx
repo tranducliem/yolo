@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useInView, AnimatePresence } from "framer-motion";
-import { mockPets, mockPosts } from "@/lib/mockData";
+// Mock data removed — using real APIs + placeholder images
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
@@ -75,7 +75,11 @@ function BeforeAfterSlider() {
       {/* After (AI selected - full underneath) */}
       <div className="border-gold absolute inset-0 border-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={mockPets[0].imageUrl} alt="" className="h-full w-full object-cover" />
+        <img
+          src="https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800&q=80"
+          alt=""
+          className="h-full w-full object-cover"
+        />
       </div>
       {/* Before (user selected - clipped) */}
       <div
@@ -84,7 +88,7 @@ function BeforeAfterSlider() {
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={mockPets[5].imageUrl}
+          src="https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=800&q=80"
           alt=""
           className="h-full w-full object-cover opacity-75 grayscale-[30%]"
         />
@@ -112,17 +116,39 @@ function BeforeAfterSlider() {
 export default function LP() {
   const router = useRouter();
   const { isLoggedIn, loaded } = useAuth();
-  const [modalPost, setModalPost] = useState<(typeof mockPosts)[0] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [modalPost, setModalPost] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [popularPosts, setPopularPosts] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    users: 0,
+    bestshots: 0,
+    totalDonations: 0,
+    animalsHelped: 0,
+  });
 
   // Logged-in users -> redirect to /home
   useEffect(() => {
     if (loaded && isLoggedIn) router.replace("/home");
   }, [loaded, isLoggedIn, router]);
 
-  const popularPosts = mockPosts.slice(0, 9);
+  useEffect(() => {
+    fetch("/api/posts/feed?limit=9")
+      .then((r) => r.json())
+      .then((d) => setPopularPosts(d.posts ?? []))
+      .catch(() => {});
+    fetch("/api/stats/public")
+      .then((r) => r.json())
+      .then((d) => setStats(d.stats ?? stats))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Dog photos for rescued animals section
-  const rescuedPhotos = [mockPets[6].imageUrl, mockPets[7].imageUrl, mockPets[8].imageUrl];
+  const rescuedPhotos = [
+    "https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400&q=80",
+    "https://images.unsplash.com/photo-1574158622682-e40e69881006?w=400&q=80",
+    "https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=400&q=80",
+  ];
 
   return (
     <div className="min-h-screen">
@@ -239,7 +265,7 @@ export default function LP() {
             <div className="border-gold h-full w-full overflow-hidden rounded-2xl border-4 shadow-xl">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={mockPets[0].imageUrl}
+                src="https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400&q=80"
                 alt="ベストショット例"
                 className="h-full w-full object-cover"
               />
@@ -425,7 +451,7 @@ export default function LP() {
                 </p>
                 <p className="mb-3 text-sm text-gray-600">{modalPost.caption}</p>
                 <div className="mb-3 flex flex-wrap gap-1">
-                  {modalPost.tags.map((t) => (
+                  {(modalPost.tags ?? []).map((t: string) => (
                     <span
                       key={t}
                       className="text-accent bg-accent/10 rounded-full px-2 py-0.5 text-xs"

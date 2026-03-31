@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPets, availableTags, donationTags } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/features/auth/AuthGate";
 import { useToast } from "@/components/ui/Toast";
-
-const me = mockPets[0];
 const visibilityOptions = [
   { id: "public", icon: "🌍", label: "全体" },
   { id: "followers", icon: "👥", label: "フォロワー" },
@@ -34,6 +31,25 @@ function PostInner() {
   const [confetti, setConfetti] = useState(false);
   const [src, setSrc] = useState<"cam" | "best">("best");
   const [posting, setPosting] = useState(false);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [donationTags, setDonationTags] = useState<string[]>([]);
+  const [petPhotos, setPetPhotos] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Fetch tags from API
+    Promise.all([
+      fetch("/api/tags?type=normal").then((r) => r.json()),
+      fetch("/api/tags?type=donation").then((r) => r.json()),
+      fetch("/api/pets/me")
+        .then((r) => (r.ok ? r.json() : { pet: null }))
+        .catch(() => ({ pet: null })),
+    ]).then(([normalRes, donationRes, petRes]) => {
+      setAvailableTags((normalRes.tags ?? []).map((t: { name: string }) => t.name));
+      setDonationTags((donationRes.tags ?? []).map((t: { name: string }) => t.name));
+      const photos = (petRes.pet?.photos ?? []).map((p: { photoUrl: string }) => p.photoUrl);
+      setPetPhotos(photos);
+    });
+  }, []);
 
   const hasDonationTag = tags.some((t) => donationTags.includes(t));
 
@@ -150,7 +166,7 @@ function PostInner() {
           transition={{ delay: 0.15 }}
           className="mb-4 grid grid-cols-3 gap-1.5"
         >
-          {me.photos.map((url, i) => (
+          {petPhotos.map((url, i) => (
             <motion.div
               key={i}
               whileTap={{ scale: 0.95 }}

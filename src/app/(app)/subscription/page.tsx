@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { PLANS } from "@/config/plans";
-import { ambassadorRanks } from "@/lib/mockData";
+import { AMBASSADOR_RANKS } from "@/config/ambassador";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
@@ -238,7 +238,7 @@ function SubscriptionContent() {
             const isRecommended = plan.recommended;
             const price = isYearly ? plan.yearlyPrice : plan.monthlyPrice;
             const priceSuffix = plan.monthlyPrice === 0 ? "" : isYearly ? "/年" : "/月";
-            const maxAmbRank = ambassadorRanks[plan.maxAmbassadorLevel - 1];
+            const maxAmbRank = AMBASSADOR_RANKS[plan.maxAmbassadorLevel - 1];
 
             return (
               <motion.div

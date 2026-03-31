@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { sendPushToUser } from "@/lib/firebase/send-notification";
 
 export const maxDuration = 30;
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
         amount_input: 100,
       });
 
-      // Notify pet owner
+      // Notify pet owner (DB + Push)
       await supabaseAdmin.from("notifications").insert({
         user_id: pet.user_id,
         type: "crown",
@@ -73,6 +74,12 @@ export async function POST(request: NextRequest) {
         icon: "👑",
         link: "/ranking",
       });
+      await sendPushToUser(
+        pet.user_id,
+        "👑 今日のCrown!",
+        "あなたのペットが今日のCrownに選ばれました！+100🐾",
+        "/ranking",
+      );
     }
 
     return NextResponse.json({ success: true, petId: topPost.pet_id, score });

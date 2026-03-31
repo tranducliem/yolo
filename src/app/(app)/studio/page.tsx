@@ -1,13 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPets, studioStyles } from "@/lib/mockData";
+import { studioStyles } from "@/config/studio";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/features/auth/AuthModal";
 
-const me = mockPets[0];
+interface PetMe {
+  id: string;
+  name: string;
+  imageUrl: string;
+  photos: string[];
+}
 
 export default function StudioPage() {
   const router = useRouter();
@@ -20,11 +26,30 @@ export default function StudioPage() {
   const [done, setDone] = useState(false);
   const [authModal, setAuthModal] = useState(false);
   const [slider, setSlider] = useState(50);
+  const [me, setMe] = useState<PetMe | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
   const styleObj = studioStyles.find((s) => s.id === style);
+
+  const fetchMe = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pets/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pet) setMe(data.pet);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setMeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
 
   useEffect(() => {
     if (processing) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- timer-driven state update
       setProgress(0);
       const interval = setInterval(() => {
         setProgress((p) => {
@@ -100,32 +125,56 @@ export default function StudioPage() {
               exit={{ opacity: 0, x: 20 }}
             >
               <h2 className="mb-3 text-2xl font-bold text-[#0D1B2A]">写真を選択</h2>
-              <div className="mb-4 grid grid-cols-3 gap-1">
-                {me.photos.map((url, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className={`aspect-square cursor-pointer overflow-hidden rounded-lg transition-all ${
-                      photo === url ? "ring-accent scale-[1.02] ring-4" : ""
-                    }`}
-                    onClick={() => setPhoto(url)}
+              {meLoading ? (
+                <div className="mb-4 grid grid-cols-3 gap-1">
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <div key={i} className="aspect-square animate-pulse rounded-lg bg-gray-200" />
+                  ))}
+                </div>
+              ) : me && me.photos.length > 0 ? (
+                <>
+                  <div className="mb-4 grid grid-cols-3 gap-1">
+                    {me.photos.map((url, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: i * 0.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className={`aspect-square cursor-pointer overflow-hidden rounded-lg transition-all ${
+                          photo === url ? "ring-accent scale-[1.02] ring-4" : ""
+                        }`}
+                        onClick={() => setPhoto(url)}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </motion.div>
+                    ))}
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => photo && setStep(2)}
+                    disabled={!photo}
+                    className="h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                  </motion.div>
-                ))}
-              </div>
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                onClick={() => photo && setStep(2)}
-                disabled={!photo}
-                className="h-12 w-full rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:shadow-none"
-              >
-                次へ
-              </motion.button>
+                    次へ
+                  </motion.button>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <p className="mb-2 text-4xl">📷</p>
+                  <p className="mb-1 text-lg font-bold text-gray-700">写真がありません</p>
+                  <p className="mb-4 text-sm text-gray-400">
+                    ベストショットを撮って写真を追加しましょう
+                  </p>
+                  <Link
+                    href="/try"
+                    className="rounded-xl bg-gradient-to-r from-[#2A9D8F] to-[#238b7e] px-6 py-3 text-sm font-bold text-white shadow-md transition-all duration-200 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]"
+                  >
+                    ✨ ベストショットを撮る
+                  </Link>
+                </div>
+              )}
             </motion.div>
           )}
 

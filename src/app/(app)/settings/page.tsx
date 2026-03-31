@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/features/auth/AuthGate";
+
+interface PetData {
+  id: string;
+  name: string;
+  species: "dog" | "cat";
+  breed: string;
+  imageUrl: string;
+}
 
 /* ── Toggle Switch ── */
 function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
@@ -62,7 +69,26 @@ function Section({
 function SettingsContent() {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const pet = mockPets[0];
+  const [pet, setPet] = useState<PetData | null>(null);
+  const [petLoading, setPetLoading] = useState(true);
+
+  const fetchPet = useCallback(async () => {
+    try {
+      const res = await fetch("/api/pets/me");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pet) setPet(data.pet);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setPetLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPet();
+  }, [fetchPet]);
 
   /* ── Notification toggles ── */
   const [pushOn, setPushOn] = useState(true);
@@ -145,8 +171,8 @@ function SettingsContent() {
             <div className="relative">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={pet.imageUrl}
-                alt={pet.name}
+                src={pet?.imageUrl || user?.avatarUrl || "/images/default-avatar.png"}
+                alt={pet?.name || user?.petName || ""}
                 className="h-16 w-16 rounded-full object-cover"
               />
               <button className="absolute -right-1 -bottom-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#2A9D8F] text-xs text-white shadow-md transition-all duration-200 hover:scale-110">
@@ -154,7 +180,7 @@ function SettingsContent() {
               </button>
             </div>
             <div>
-              <p className="text-sm font-bold">{user?.petName || pet.name}</p>
+              <p className="text-sm font-bold">{user?.petName || pet?.name || "ペット未登録"}</p>
               <p className="text-xs text-gray-400">プロフィール画像を変更</p>
             </div>
           </div>
@@ -195,23 +221,35 @@ function SettingsContent() {
 
         {/* ── Section 2: ペット管理 ── */}
         <Section title="ペット管理" delay={0.15}>
-          <div className="flex items-center gap-3 py-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={pet.imageUrl}
-              alt={pet.name}
-              className="h-12 w-12 rounded-full object-cover"
-            />
-            <div className="flex-1">
-              <p className="text-sm font-bold">{pet.name}</p>
-              <p className="text-xs text-gray-400">
-                {pet.species === "dog" ? "🐶" : "🐱"} {pet.breed}
-              </p>
+          {petLoading ? (
+            <div className="flex items-center gap-3 py-3">
+              <div className="h-12 w-12 animate-pulse rounded-full bg-gray-200" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+                <div className="h-3 w-32 animate-pulse rounded bg-gray-200" />
+              </div>
             </div>
-            <button className="rounded-xl border-2 border-[#2A9D8F] px-3 py-1.5 text-xs font-medium text-[#2A9D8F] transition-all duration-200 hover:bg-[#F0FDFB]">
-              編集
-            </button>
-          </div>
+          ) : pet ? (
+            <div className="flex items-center gap-3 py-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pet.imageUrl}
+                alt={pet.name}
+                className="h-12 w-12 rounded-full object-cover"
+              />
+              <div className="flex-1">
+                <p className="text-sm font-bold">{pet.name}</p>
+                <p className="text-xs text-gray-400">
+                  {pet.species === "dog" ? "🐶" : "🐱"} {pet.breed}
+                </p>
+              </div>
+              <button className="rounded-xl border-2 border-[#2A9D8F] px-3 py-1.5 text-xs font-medium text-[#2A9D8F] transition-all duration-200 hover:bg-[#F0FDFB]">
+                編集
+              </button>
+            </div>
+          ) : (
+            <div className="py-4 text-center text-sm text-gray-400">ペットが登録されていません</div>
+          )}
           <div className="py-3">
             <button className="w-full rounded-xl border-2 border-dashed border-gray-300 py-2.5 text-sm text-[#4B5563] transition-all duration-200 hover:border-[#2A9D8F] hover:text-[#2A9D8F]">
               + ペットを追加

@@ -1,22 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ambassadorRanks, mockPrefectureAmbassadors, mockLegends } from "@/lib/mockData";
+import { AMBASSADOR_RANKS } from "@/config/ambassador";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/features/auth/AuthGate";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
+import type { PrefectureAmbassador, LegendEntry } from "@/types";
 
 /* ── Region grouping ── */
 const regionOrder = ["北海道", "東北", "関東", "中部", "近畿", "中国", "四国", "九州"];
 
-function groupByRegion() {
-  const groups: Record<string, typeof mockPrefectureAmbassadors> = {};
+function groupByRegion(ambassadors: PrefectureAmbassador[]) {
+  const groups: Record<string, PrefectureAmbassador[]> = {};
   regionOrder.forEach((r) => {
     groups[r] = [];
   });
-  mockPrefectureAmbassadors.forEach((p) => {
+  ambassadors.forEach((p) => {
     if (groups[p.region]) groups[p.region].push(p);
   });
   return groups;
@@ -34,6 +35,38 @@ function AmbassadorContent() {
   const [status, setStatus] = useState<AmbassadorStatusData | null>(null);
   const [selectedPref, setSelectedPref] = useState<string | null>(null);
   const [expandedRegion, setExpandedRegion] = useState<string | null>("関東");
+  const [prefectureAmbassadors, setPrefectureAmbassadors] = useState<PrefectureAmbassador[]>([]);
+  const [legends, setLegends] = useState<LegendEntry[]>([]);
+  const [prefLoading, setPrefLoading] = useState(true);
+  const [legendsLoading, setLegendsLoading] = useState(true);
+
+  const fetchPrefectures = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ambassador/prefectures");
+      if (res.ok) {
+        const data = await res.json();
+        setPrefectureAmbassadors(data.prefectures || []);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setPrefLoading(false);
+    }
+  }, []);
+
+  const fetchLegends = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ambassador/legends");
+      if (res.ok) {
+        const data = await res.json();
+        setLegends(data.legends || []);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setLegendsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     fetch("/api/ambassador/status")
@@ -42,15 +75,18 @@ function AmbassadorContent() {
         if (d.currentLevel !== undefined) setStatus(d);
       })
       .catch(() => {});
-  }, []);
+
+    fetchPrefectures();
+    fetchLegends();
+  }, [fetchPrefectures, fetchLegends]);
 
   const userLevel = status?.currentLevel ?? user?.ambassadorLevel ?? 0;
 
-  const regionGroups = groupByRegion();
+  const regionGroups = groupByRegion(prefectureAmbassadors);
 
   // Find selected prefecture data
   const selectedPrefData = selectedPref
-    ? mockPrefectureAmbassadors.find((p) => p.prefecture === selectedPref)
+    ? prefectureAmbassadors.find((p) => p.prefecture === selectedPref)
     : null;
 
   return (
@@ -92,11 +128,11 @@ function AmbassadorContent() {
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
             className="mb-3 text-5xl"
           >
-            {ambassadorRanks[userLevel - 1]?.emoji || "🌱"}
+            {AMBASSADOR_RANKS[userLevel - 1]?.emoji || "🌱"}
           </motion.div>
           <p className="text-sm opacity-80">現在のランク</p>
           <p className="mb-1 text-2xl font-extrabold">
-            Lv.{userLevel} {ambassadorRanks[userLevel - 1]?.name || "サポーター"}
+            Lv.{userLevel} {AMBASSADOR_RANKS[userLevel - 1]?.name || "サポーター"}
           </p>
           {user?.ambassadorRegion && (
             <p className="mb-3 text-sm opacity-90">
@@ -106,10 +142,10 @@ function AmbassadorContent() {
           <div className="rounded-xl bg-white/20 p-3 backdrop-blur-sm">
             <p className="mb-1 text-xs opacity-80">寄付倍率</p>
             <p className="text-3xl font-extrabold">
-              {ambassadorRanks[userLevel - 1]?.donationMultiplier || 1}x
+              {AMBASSADOR_RANKS[userLevel - 1]?.donationMultiplier || 1}x
             </p>
             <p className="mt-1 text-xs opacity-80">
-              あなたの投稿は通常の{ambassadorRanks[userLevel - 1]?.donationMultiplier || 1}
+              あなたの投稿は通常の{AMBASSADOR_RANKS[userLevel - 1]?.donationMultiplier || 1}
               倍の寄付を生みます
             </p>
           </div>
@@ -125,7 +161,7 @@ function AmbassadorContent() {
           <h2 className="mb-4 text-lg font-bold text-[#0D1B2A]">📊 ランク一覧</h2>
 
           <div className="space-y-3">
-            {ambassadorRanks.map((rank, i) => {
+            {AMBASSADOR_RANKS.map((rank, i) => {
               const isAchieved = rank.level <= userLevel;
               const isNext = rank.level === userLevel + 1;
               const isCurrent = rank.level === userLevel;
@@ -262,79 +298,91 @@ function AmbassadorContent() {
           <h2 className="mb-1 text-lg font-bold text-[#0D1B2A]">🗾 全国アンバサダーマップ</h2>
           <p className="mb-4 text-sm text-[#9CA3AF]">地域ごとに犬・猫各1名の枠があります</p>
 
-          <div className="space-y-3">
-            {regionOrder.map((region) => {
-              const prefs = regionGroups[region];
-              const filledCount = prefs.filter((p) => p.dog || p.cat).length;
-              const isExpanded = expandedRegion === region;
+          {prefLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-12 animate-pulse rounded-xl bg-gray-200" />
+              ))}
+            </div>
+          ) : prefectureAmbassadors.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-400">
+              まだアンバサダーデータがありません
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {regionOrder.map((region) => {
+                const prefs = regionGroups[region];
+                const filledCount = prefs.filter((p) => p.dog || p.cat).length;
+                const isExpanded = expandedRegion === region;
 
-              return (
-                <div key={region}>
-                  <button
-                    onClick={() => setExpandedRegion(isExpanded ? null : region)}
-                    className={`flex w-full items-center justify-between rounded-xl p-3 transition-all duration-200 ${
-                      filledCount > 0
-                        ? "bg-[#D4A843]/10 hover:bg-[#D4A843]/20"
-                        : "bg-gray-50 hover:bg-gray-100"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-gray-700">{region}</span>
-                      <span className="text-[10px] text-gray-400">({prefs.length}都道府県)</span>
-                      {filledCount > 0 && (
-                        <span className="rounded-full bg-[#D4A843]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#D4A843]">
-                          {filledCount}名活動中
-                        </span>
-                      )}
-                    </div>
-                    <span
-                      className={`text-gray-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                return (
+                  <div key={region}>
+                    <button
+                      onClick={() => setExpandedRegion(isExpanded ? null : region)}
+                      className={`flex w-full items-center justify-between rounded-xl p-3 transition-all duration-200 ${
+                        filledCount > 0
+                          ? "bg-[#D4A843]/10 hover:bg-[#D4A843]/20"
+                          : "bg-gray-50 hover:bg-gray-100"
+                      }`}
                     >
-                      &rsaquo;
-                    </span>
-                  </button>
-
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="overflow-hidden"
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-700">{region}</span>
+                        <span className="text-[10px] text-gray-400">({prefs.length}都道府県)</span>
+                        {filledCount > 0 && (
+                          <span className="rounded-full bg-[#D4A843]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#D4A843]">
+                            {filledCount}名活動中
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`text-gray-400 transition-transform ${isExpanded ? "rotate-90" : ""}`}
                       >
-                        <div className="grid grid-cols-3 gap-2 p-2">
-                          {prefs.map((pref) => {
-                            const hasDog = !!pref.dog;
-                            const hasCat = !!pref.cat;
-                            const filled = hasDog || hasCat;
+                        &rsaquo;
+                      </span>
+                    </button>
 
-                            return (
-                              <button
-                                key={pref.prefecture}
-                                onClick={() => setSelectedPref(pref.prefecture)}
-                                className={`rounded-lg p-2 text-center text-xs font-medium transition-all duration-200 ${
-                                  filled
-                                    ? "border border-[#D4A843] bg-gradient-to-br from-[#D4A843]/20 to-[#D4A843]/10 text-[#D4A843] hover:scale-105 hover:shadow-sm"
-                                    : "border border-dashed border-gray-300 bg-gray-50 text-gray-400 hover:bg-gray-100"
-                                }`}
-                              >
-                                <span>{pref.prefecture}</span>
-                                <div className="mt-0.5 flex justify-center gap-1">
-                                  {hasDog && <span className="text-[10px]">🐶</span>}
-                                  {hasCat && <span className="text-[10px]">🐱</span>}
-                                  {!filled && <span className="text-[10px]">---</span>}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-          </div>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="grid grid-cols-3 gap-2 p-2">
+                            {prefs.map((pref) => {
+                              const hasDog = !!pref.dog;
+                              const hasCat = !!pref.cat;
+                              const filled = hasDog || hasCat;
+
+                              return (
+                                <button
+                                  key={pref.prefecture}
+                                  onClick={() => setSelectedPref(pref.prefecture)}
+                                  className={`rounded-lg p-2 text-center text-xs font-medium transition-all duration-200 ${
+                                    filled
+                                      ? "border border-[#D4A843] bg-gradient-to-br from-[#D4A843]/20 to-[#D4A843]/10 text-[#D4A843] hover:scale-105 hover:shadow-sm"
+                                      : "border border-dashed border-gray-300 bg-gray-50 text-gray-400 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  <span>{pref.prefecture}</span>
+                                  <div className="mt-0.5 flex justify-center gap-1">
+                                    {hasDog && <span className="text-[10px]">🐶</span>}
+                                    {hasCat && <span className="text-[10px]">🐱</span>}
+                                    {!filled && <span className="text-[10px]">---</span>}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </motion.div>
 
         {/* Prefecture detail modal */}
@@ -504,38 +552,51 @@ function AmbassadorContent() {
         >
           <h2 className="mb-3 text-lg font-bold text-[#0D1B2A]">🏆 Legend Hall of Fame</h2>
 
-          <div className="hide-scrollbar flex gap-3 overflow-x-auto pb-2">
-            {mockLegends.map((legend, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 + i * 0.05 }}
-                className="rainbow-border w-36 flex-shrink-0 rounded-2xl bg-gradient-to-b from-white to-gray-50 p-3 text-center"
-              >
-                <div className="relative mb-2 inline-block">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={legend.imageUrl}
-                    alt={legend.petName}
-                    className="sparkle h-20 w-20 rounded-full border-3 border-[#D4A843] object-cover shadow-lg"
-                  />
-                  <motion.span
-                    animate={{ rotate: [0, 5, -5, 0] }}
-                    transition={{ repeat: Infinity, duration: 4 }}
-                    className="absolute -top-2 -right-2 text-xl"
-                  >
-                    {legend.badge}
-                  </motion.span>
-                </div>
-                <p className="text-xs font-bold text-gray-900">{legend.name}</p>
-                <p className="text-[10px] text-gray-400">{legend.petName}</p>
-                <p className="mt-0.5 text-[10px] font-bold text-emerald-600">
-                  ¥{legend.totalDonation.toLocaleString()}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+          {legendsLoading ? (
+            <div className="flex gap-3 overflow-hidden pb-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-40 w-36 flex-shrink-0 animate-pulse rounded-2xl bg-gray-200"
+                />
+              ))}
+            </div>
+          ) : legends.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-400">まだレジェンドはいません</div>
+          ) : (
+            <div className="hide-scrollbar flex gap-3 overflow-x-auto pb-2">
+              {legends.map((legend, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 + i * 0.05 }}
+                  className="rainbow-border w-36 flex-shrink-0 rounded-2xl bg-gradient-to-b from-white to-gray-50 p-3 text-center"
+                >
+                  <div className="relative mb-2 inline-block">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={legend.imageUrl}
+                      alt={legend.petName}
+                      className="sparkle h-20 w-20 rounded-full border-3 border-[#D4A843] object-cover shadow-lg"
+                    />
+                    <motion.span
+                      animate={{ rotate: [0, 5, -5, 0] }}
+                      transition={{ repeat: Infinity, duration: 4 }}
+                      className="absolute -top-2 -right-2 text-xl"
+                    >
+                      {legend.badge}
+                    </motion.span>
+                  </div>
+                  <p className="text-xs font-bold text-gray-900">{legend.name}</p>
+                  <p className="text-[10px] text-gray-400">{legend.petName}</p>
+                  <p className="mt-0.5 text-[10px] font-bold text-emerald-600">
+                    ¥{legend.totalDonation.toLocaleString()}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* ═══════ Section 6: CTA ═══════ */}
@@ -548,10 +609,10 @@ function AmbassadorContent() {
           {userLevel < 5 && (
             <div className="rounded-2xl bg-gradient-to-r from-[#D4A843] to-amber-400 p-5 text-center text-white shadow-lg shadow-amber-200">
               <p className="mb-1 text-lg font-bold">
-                次の目標: {ambassadorRanks[userLevel]?.emoji} {ambassadorRanks[userLevel]?.name}
+                次の目標: {AMBASSADOR_RANKS[userLevel]?.emoji} {AMBASSADOR_RANKS[userLevel]?.name}
               </p>
               <p className="mb-3 text-xs opacity-80">
-                寄付倍率が{ambassadorRanks[userLevel]?.donationMultiplier}xにアップ！
+                寄付倍率が{AMBASSADOR_RANKS[userLevel]?.donationMultiplier}xにアップ！
               </p>
               <Link href="/subscription">
                 <motion.button

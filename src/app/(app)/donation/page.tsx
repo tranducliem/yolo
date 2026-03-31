@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { mockDonationTags, mockDonationReport } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AuthGate from "@/components/features/auth/AuthGate";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 import DonationBadge from "@/components/features/donation/DonationBadge";
 import { useToast } from "@/components/ui/Toast";
+import type { DonationTag, DonationReport } from "@/types";
 
 type RankingTab = "monthly" | "total";
 
@@ -124,15 +124,45 @@ function DonationContent() {
   const [summary, setSummary] = useState<DonationSummary | null>(null);
   const [rankings, setRankings] = useState<RankingEntry[]>([]);
   const [npos, setNpos] = useState<NpoEntry[]>([]);
-
-  const report = mockDonationReport;
+  const [donationTags, setDonationTags] = useState<DonationTag[]>([]);
+  const [report, setReport] = useState<DonationReport | null>(null);
+  const [tagsLoading, setTagsLoading] = useState(true);
+  const [reportLoading, setReportLoading] = useState(true);
 
   const fetchSummary = useCallback(async () => {
     try {
       const res = await fetch("/api/donation/summary");
       if (res.ok) setSummary(await res.json());
     } catch {
-      /* fallback to mock */
+      /* no fallback */
+    }
+  }, []);
+
+  const fetchDonationTags = useCallback(async () => {
+    try {
+      const res = await fetch("/api/donation/tags");
+      if (res.ok) {
+        const data = await res.json();
+        setDonationTags(data.tags || []);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setTagsLoading(false);
+    }
+  }, []);
+
+  const fetchReport = useCallback(async () => {
+    try {
+      const res = await fetch("/api/donation/reports/latest");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.report) setReport(data.report);
+      }
+    } catch {
+      /* no fallback */
+    } finally {
+      setReportLoading(false);
     }
   }, []);
 
@@ -161,13 +191,13 @@ function DonationContent() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching data from API on mount
     fetchSummary();
     fetchNpos();
-  }, [fetchSummary, fetchNpos]);
+    fetchDonationTags();
+    fetchReport();
+  }, [fetchSummary, fetchNpos, fetchDonationTags, fetchReport]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching data from API on tab change
     fetchRankings(rankTab);
   }, [rankTab, fetchRankings]);
 
@@ -250,36 +280,75 @@ function DonationContent() {
         >
           <h2 className="mb-3 text-base font-bold text-[#0D1B2A]">📋 今月の寄付レポート</h2>
 
-          <div className="mb-4 rounded-xl bg-emerald-50 p-3">
-            <p className="text-sm font-medium text-emerald-800">今月の寄付先: {report.npoName}</p>
-            <p className="text-xs text-emerald-600">（{report.npoLocation}）</p>
-          </div>
-
-          <div className="hide-scrollbar mb-4 flex gap-2 overflow-x-auto">
-            {report.images.map((img, i) => (
-              <div key={i} className="relative flex-shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img}
-                  alt={`保護動物 ${i + 1}`}
-                  className="h-28 w-28 rounded-xl object-cover"
-                />
-                <span className="absolute bottom-1 left-1 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                  {i === 0 ? "Before" : "After"}
-                </span>
+          {reportLoading ? (
+            <div className="space-y-3">
+              <div className="h-16 animate-pulse rounded-xl bg-gray-200" />
+              <div className="flex gap-2">
+                <div className="h-28 w-28 animate-pulse rounded-xl bg-gray-200" />
+                <div className="h-28 w-28 animate-pulse rounded-xl bg-gray-200" />
               </div>
-            ))}
-          </div>
+              <div className="h-12 animate-pulse rounded-xl bg-gray-200" />
+            </div>
+          ) : report ? (
+            <>
+              {report.npoName && (
+                <div className="mb-4 rounded-xl bg-emerald-50 p-3">
+                  <p className="text-sm font-medium text-emerald-800">
+                    今月の寄付先: {report.npoName}
+                  </p>
+                  {report.npoLocation && (
+                    <p className="text-xs text-emerald-600">（{report.npoLocation}）</p>
+                  )}
+                </div>
+              )}
 
-          <div className="mb-4 rounded-xl bg-teal-50 p-3">
-            <p className="text-sm leading-relaxed text-teal-800">
-              あなたの寄付で今月 犬<span className="font-bold">{report.dogCount}匹</span>・猫
-              <span className="font-bold">{report.catCount}匹</span> の食事が届きました
-            </p>
-          </div>
+              {(report.npos ?? []).length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {(report.npos ?? []).map(
+                    (npo: { name: string; totalDonated: number }, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between rounded-xl bg-emerald-50 p-3"
+                      >
+                        <span className="text-sm font-medium text-emerald-800">{npo.name}</span>
+                        <span className="text-sm font-bold text-emerald-700">
+                          ¥{npo.totalDonated.toLocaleString()}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
 
-          <p className="mb-2 text-xs font-bold text-gray-700">寄付金の使途</p>
-          <DonationPieChart />
+              {report.images && report.images.length > 0 && (
+                <div className="hide-scrollbar mb-4 flex gap-2 overflow-x-auto">
+                  {report.images.map((img: string, i: number) => (
+                    <div key={i} className="relative flex-shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img}
+                        alt={`保護動物 ${i + 1}`}
+                        className="h-28 w-28 rounded-xl object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mb-4 rounded-xl bg-teal-50 p-3">
+                <p className="text-sm leading-relaxed text-teal-800">
+                  あなたの寄付で今月
+                  <span className="font-bold"> {report.animalsHelped ?? 0}匹</span>
+                  の食事が届きました
+                </p>
+              </div>
+
+              <p className="mb-2 text-xs font-bold text-gray-700">寄付金の使途</p>
+              <DonationPieChart />
+            </>
+          ) : (
+            <div className="py-8 text-center text-sm text-gray-400">まだレポートがありません</div>
+          )}
         </motion.div>
 
         {/* ═══════ Section 3: Donation Rankings ═══════ */}
@@ -385,7 +454,7 @@ function DonationContent() {
           )}
         </motion.div>
 
-        {/* ═══════ Section 4: Active Donation Tags (mock - Phase 3) ═══════ */}
+        {/* ═══════ Section 4: Active Donation Tags ═══════ */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -394,49 +463,59 @@ function DonationContent() {
         >
           <h2 className="mb-3 text-base font-bold text-[#0D1B2A]">🏷️ 寄付タグ</h2>
 
-          <div className="space-y-3">
-            {mockDonationTags.map((tag) => (
-              <div
-                key={tag.id}
-                className={`rounded-xl border p-3 ${
-                  tag.isSponsor
-                    ? "border-dashed border-[#D4A843] bg-amber-50/50"
-                    : tag.isActive
-                      ? "border-emerald-200 bg-emerald-50/50"
-                      : "border-gray-200 bg-gray-50"
-                }`}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-gray-900">{tag.tag}</span>
-                    {tag.isSponsor && (
-                      <span className="rounded-full bg-[#D4A843]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#D4A843]">
-                        Coming Soon
-                      </span>
-                    )}
-                    {tag.isActive && <DonationBadge compact />}
+          {tagsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-20 animate-pulse rounded-xl bg-gray-200" />
+              ))}
+            </div>
+          ) : donationTags.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-400">まだ寄付タグがありません</div>
+          ) : (
+            <div className="space-y-3">
+              {donationTags.map((tag) => (
+                <div
+                  key={tag.id}
+                  className={`rounded-xl border p-3 ${
+                    tag.isSponsor
+                      ? "border-dashed border-[#D4A843] bg-amber-50/50"
+                      : tag.isActive
+                        ? "border-emerald-200 bg-emerald-50/50"
+                        : "border-gray-200 bg-gray-50"
+                  }`}
+                >
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-900">{tag.tag}</span>
+                      {tag.isSponsor && (
+                        <span className="rounded-full bg-[#D4A843]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#D4A843]">
+                          Coming Soon
+                        </span>
+                      )}
+                      {tag.isActive && <DonationBadge compact />}
+                    </div>
                   </div>
+                  <div className="flex items-center gap-3 text-xs text-gray-500">
+                    <span>{tag.posts}件の投稿</span>
+                    <span>寄付累計 ¥{tag.donationTotal.toLocaleString()}</span>
+                  </div>
+                  {tag.isActive && !tag.isSponsor && (
+                    <Link
+                      href="/post"
+                      className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#2A9D8F] hover:underline"
+                    >
+                      📷 このタグで投稿する &rarr;
+                    </Link>
+                  )}
+                  {tag.isSponsor && (
+                    <p className="mt-1 text-[10px] text-[#D4A843]">
+                      {tag.sponsorName}がスポンサーするタグです（準備中）
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <span>{tag.posts}件の投稿</span>
-                  <span>寄付累計 ¥{tag.donationTotal.toLocaleString()}</span>
-                </div>
-                {tag.isActive && !tag.isSponsor && (
-                  <Link
-                    href="/post"
-                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#2A9D8F] hover:underline"
-                  >
-                    📷 このタグで投稿する &rarr;
-                  </Link>
-                )}
-                {tag.isSponsor && (
-                  <p className="mt-1 text-[10px] text-[#D4A843]">
-                    {tag.sponsorName}がスポンサーするタグです（準備中）
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </motion.div>
 
         {/* ═══════ Section 5: Community Total ═══════ */}

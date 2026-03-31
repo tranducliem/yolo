@@ -1,19 +1,39 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockOrders } from "@/lib/mockData";
-import type { MockOrder } from "@/types";
 
-const statusLabel: Record<MockOrder["status"], string> = {
-  new: "新規",
-  processing: "処理中",
-  shipping: "配送中",
-  completed: "完了",
-  cancelled: "キャンセル",
+interface OrderItem {
+  name: string;
+  quantity: number;
+  price: number;
+  image_url: string;
+}
+
+interface AdminOrder {
+  id: string;
+  order_number: string;
+  user_id: string;
+  status: "new" | "processing" | "shipping" | "completed" | "cancelled";
+  items: OrderItem[];
+  total: number;
+  donation_amount: number;
+  shipping_address: string;
+  tracking_number: string | null;
+  created_at: string;
+  users: { display_name: string; email: string };
+}
+
+const statusLabel: Record<string, string> = {
+  new: "New",
+  processing: "Processing",
+  shipping: "Shipping",
+  completed: "Completed",
+  cancelled: "Cancelled",
 };
 
-const statusColor: Record<MockOrder["status"], string> = {
+const statusColor: Record<string, string> = {
   new: "bg-blue-50 text-blue-600",
   processing: "bg-yellow-50 text-yellow-600",
   shipping: "bg-orange-50 text-orange-600",
@@ -22,71 +42,95 @@ const statusColor: Record<MockOrder["status"], string> = {
 };
 
 export default function OrdersAdminPage() {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-  const [selectedOrder, setSelectedOrder] = useState<MockOrder | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [trackingInput, setTrackingInput] = useState("");
   const [adminNotes, setAdminNotes] = useState("");
 
-  const filtered = mockOrders.filter((o) => {
-    if (filterStatus !== "all" && o.status !== filterStatus) return false;
-    if (filterCategory !== "all") {
-      const catMatch = o.items.some((it) => {
-        if (filterCategory === "2d")
-          return ["アクリルスタンド", "マグカップ", "Tシャツ", "スマホケース", "クッション", "フォトパネル"].includes(
-            it.name
-          );
-        if (filterCategory === "3d") return it.name.includes("フィギュア");
-        if (filterCategory === "book") return it.name.includes("フォトブック");
-        return true;
-      });
-      if (!catMatch) return false;
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterStatus !== "all") params.set("status", filterStatus);
+      const res = await fetch(`/api/admin/orders?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setOrders(data.orders || []);
+      setTotal(data.total || 0);
+    } catch {
+      // Show empty state
+    } finally {
+      setLoading(false);
     }
-    return true;
-  });
+  }, [filterStatus]);
 
-  const todayOrders = mockOrders.filter((o) => o.date === "2026-03-27").length || 12;
-  const pendingOrders = mockOrders.filter((o) => o.status === "new" || o.status === "processing").length;
-  const shippingOrders = mockOrders.filter((o) => o.status === "shipping").length;
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
-  // Donation KPIs from orders
-  const monthDonationTotal = mockOrders
+  const pendingOrders = orders.filter(
+    (o) => o.status === "new" || o.status === "processing",
+  ).length;
+  const shippingOrders = orders.filter((o) => o.status === "shipping").length;
+  const monthRevenue = orders
     .filter((o) => o.status !== "cancelled")
-    .reduce((sum, o) => sum + o.donationAmount, 0);
-  const monthDonationCount = mockOrders.filter((o) => o.donationAmount > 0 && o.status !== "cancelled").length;
+    .reduce((sum, o) => sum + o.total, 0);
+  const monthDonationTotal = orders
+    .filter((o) => o.status !== "cancelled")
+    .reduce((sum, o) => sum + (o.donation_amount || 0), 0);
+  const monthDonationCount = orders.filter(
+    (o) => (o.donation_amount || 0) > 0 && o.status !== "cancelled",
+  ).length;
 
   const kpis = [
-    { label: "今日の注文", value: String(todayOrders), icon: "📦" },
-    { label: "処理待ち", value: String(pendingOrders), icon: "⏳" },
-    { label: "配送中", value: String(shippingOrders), icon: "🚚" },
-    { label: "今月売上", value: "¥1,234,500", icon: "💰" },
+    { label: "Total Orders", value: String(total), icon: "📦" },
+    { label: "Pending", value: String(pendingOrders), icon: "⏳" },
+    { label: "Shipping", value: String(shippingOrders), icon: "🚚" },
+    { label: "Revenue", value: `Y${monthRevenue.toLocaleString()}`, icon: "💰" },
   ];
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6 h-9 w-48 animate-pulse rounded-lg bg-gray-200" />
+        <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
+          ))}
+        </div>
+        <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-[#0D1B2A] mb-6"
+        className="mb-6 text-3xl font-bold text-[#0D1B2A]"
       >
-        注文管理
+        Order Management
       </motion.h1>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map((kpi, i) => (
           <motion.div
             key={kpi.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <span className="text-xl">{kpi.icon}</span>
               <span className="text-sm text-gray-500">{kpi.label}</span>
             </div>
-            <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">{kpi.value}</p>
+            <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">{kpi.value}</p>
           </motion.div>
         ))}
       </div>
@@ -96,23 +140,27 @@ export default function OrdersAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.35 }}
-        className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
+        className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2"
       >
-        <div className="bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 rounded-2xl p-5 border border-[#2A9D8F]/20">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="rounded-2xl border border-[#2A9D8F]/20 bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 p-5">
+          <div className="mb-2 flex items-center gap-2">
             <span className="text-xl">🌟</span>
-            <span className="text-sm text-[#2A9D8F] font-medium">今月の購入寄付額</span>
+            <span className="text-sm font-medium text-[#2A9D8F]">Purchase Donations</span>
           </div>
-          <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">¥{monthDonationTotal.toLocaleString()}</p>
-          <p className="text-xs text-gray-500 mt-1">売上の5%が寄付に充当</p>
+          <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">
+            Y{monthDonationTotal.toLocaleString()}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">5% of sales donated</p>
         </div>
-        <div className="bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 rounded-2xl p-5 border border-[#2A9D8F]/20">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="rounded-2xl border border-[#2A9D8F]/20 bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 p-5">
+          <div className="mb-2 flex items-center gap-2">
             <span className="text-xl">🤝</span>
-            <span className="text-sm text-[#2A9D8F] font-medium">寄付対象件数</span>
+            <span className="text-sm font-medium text-[#2A9D8F]">Donation Orders</span>
           </div>
-          <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">{monthDonationCount}件</p>
-          <p className="text-xs text-gray-500 mt-1">キャンセル分を除く</p>
+          <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">
+            {monthDonationCount} orders
+          </p>
+          <p className="mt-1 text-xs text-gray-500">Excluding cancelled</p>
         </div>
       </motion.div>
 
@@ -121,54 +169,27 @@ export default function OrdersAdminPage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6"
+        className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-wrap gap-4">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">ステータス</label>
+            <label className="mb-1 block text-xs text-gray-500">Status</label>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
             >
-              <option value="all">すべて</option>
-              <option value="new">新規</option>
-              <option value="processing">処理中</option>
-              <option value="shipping">配送中</option>
-              <option value="completed">完了</option>
-              <option value="cancelled">キャンセル</option>
+              <option value="all">All</option>
+              <option value="new">New</option>
+              <option value="processing">Processing</option>
+              <option value="shipping">Shipping</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
             </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">カテゴリ</label>
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-            >
-              <option value="all">すべて</option>
-              <option value="2d">2Dグッズ</option>
-              <option value="3d">3Dフィギュア</option>
-              <option value="book">フォトブック</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">期間</label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-              />
-              <span className="self-center text-gray-400">〜</span>
-              <input
-                type="date"
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-              />
-            </div>
           </div>
           <div className="flex items-end">
-            <button className="bg-gray-100 text-gray-600 text-xs px-4 py-2 rounded-lg hover:bg-gray-200 transition-all duration-200">
-              CSVエクスポート
+            <button className="rounded-lg bg-gray-100 px-4 py-2 text-xs text-gray-600 transition-all duration-200 hover:bg-gray-200">
+              CSV Export
             </button>
           </div>
         </div>
@@ -179,71 +200,81 @@ export default function OrdersAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#0D1B2A] text-white">
-                <th className="text-left py-3 px-2 font-medium rounded-tl-lg">注文番号</th>
-                <th className="text-left py-3 px-2 font-medium">日付</th>
-                <th className="text-left py-3 px-2 font-medium">商品</th>
-                <th className="text-right py-3 px-2 font-medium">数量</th>
-                <th className="text-right py-3 px-2 font-medium">金額</th>
-                <th className="text-right py-3 px-2 font-medium">寄付額</th>
-                <th className="text-center py-3 px-2 font-medium">ステータス</th>
-                <th className="text-center py-3 px-2 font-medium rounded-tr-lg">変更</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((order, orderIdx) => (
-                <tr
-                  key={order.id}
-                  className={`border-b border-gray-50 hover:bg-gray-100 transition-all duration-200 cursor-pointer ${orderIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
-                  onClick={() => {
-                    setSelectedOrder(order);
-                    setTrackingInput(order.trackingNumber || "");
-                    setAdminNotes("");
-                  }}
-                >
-                  <td className="py-3 px-2 font-mono text-gray-900 text-xs">{order.orderNumber}</td>
-                  <td className="py-3 px-2 text-gray-600">{order.date}</td>
-                  <td className="py-3 px-2 text-gray-700">{order.items.map((it) => it.name).join(", ")}</td>
-                  <td className="py-3 px-2 text-right text-gray-700">
-                    {order.items.reduce((s, it) => s + it.quantity, 0)}
-                  </td>
-                  <td className="py-3 px-2 text-right text-gray-900 font-medium">
-                    ¥{order.total.toLocaleString()}
-                  </td>
-                  <td className="py-3 px-2 text-right">
-                    {order.donationAmount > 0 ? (
-                      <span className="text-[#2A9D8F] font-medium">¥{order.donationAmount.toLocaleString()}</span>
-                    ) : (
-                      <span className="text-gray-300">-</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-center">
-                    <span className={`text-xs px-2 py-1 rounded-full ${statusColor[order.status]}`}>
-                      {statusLabel[order.status]}
-                    </span>
-                  </td>
-                  <td className="py-3 px-2 text-center" onClick={(e) => e.stopPropagation()}>
-                    <select
-                      defaultValue={order.status}
-                      className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-                    >
-                      <option value="new">新規</option>
-                      <option value="processing">処理中</option>
-                      <option value="shipping">配送中</option>
-                      <option value="completed">完了</option>
-                      <option value="cancelled">キャンセル</option>
-                    </select>
-                  </td>
+        {orders.length === 0 ? (
+          <div className="py-16 text-center text-gray-400">No orders found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#0D1B2A] text-white">
+                  <th className="rounded-tl-lg px-2 py-3 text-left font-medium">Order #</th>
+                  <th className="px-2 py-3 text-left font-medium">Date</th>
+                  <th className="px-2 py-3 text-left font-medium">Customer</th>
+                  <th className="px-2 py-3 text-right font-medium">Total</th>
+                  <th className="px-2 py-3 text-right font-medium">Donation</th>
+                  <th className="px-2 py-3 text-center font-medium">Status</th>
+                  <th className="rounded-tr-lg px-2 py-3 text-center font-medium">Change</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {orders.map((order, orderIdx) => (
+                  <tr
+                    key={order.id}
+                    className={`cursor-pointer border-b border-gray-50 transition-all duration-200 hover:bg-gray-100 ${orderIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
+                    onClick={() => {
+                      setSelectedOrder(order);
+                      setTrackingInput(order.tracking_number || "");
+                      setAdminNotes("");
+                    }}
+                  >
+                    <td className="px-2 py-3 font-mono text-xs text-gray-900">
+                      {order.order_number}
+                    </td>
+                    <td className="px-2 py-3 text-gray-600">
+                      {new Date(order.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-2 py-3 text-gray-700">
+                      {order.users?.display_name || "Unknown"}
+                    </td>
+                    <td className="px-2 py-3 text-right font-medium text-gray-900">
+                      Y{order.total.toLocaleString()}
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      {(order.donation_amount || 0) > 0 ? (
+                        <span className="font-medium text-[#2A9D8F]">
+                          Y{order.donation_amount.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs ${statusColor[order.status] || ""}`}
+                      >
+                        {statusLabel[order.status] || order.status}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        defaultValue={order.status}
+                        className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
+                      >
+                        <option value="new">New</option>
+                        <option value="processing">Processing</option>
+                        <option value="shipping">Shipping</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </motion.div>
 
       {/* Detail Slide Panel */}
@@ -262,95 +293,113 @@ export default function OrdersAdminPage() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="relative w-full max-w-md bg-white h-full shadow-xl overflow-y-auto"
+              className="relative h-full w-full max-w-md overflow-y-auto bg-white shadow-xl"
             >
               <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-gray-900">注文詳細</h3>
+                <div className="mb-6 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900">Order Details</h3>
                   <button
                     onClick={() => setSelectedOrder(null)}
-                    className="text-gray-400 hover:text-gray-700 text-xl"
+                    className="text-xl text-gray-400 hover:text-gray-700"
                   >
-                    ✕
+                    X
                   </button>
                 </div>
 
                 <div className="space-y-4">
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-1">注文番号</p>
-                    <p className="text-sm font-mono font-bold text-gray-900">{selectedOrder.orderNumber}</p>
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="mb-1 text-xs text-gray-400">Order Number</p>
+                    <p className="font-mono text-sm font-bold text-gray-900">
+                      {selectedOrder.order_number}
+                    </p>
                   </div>
 
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-1">ステータス</p>
-                    <span className={`text-xs px-2 py-1 rounded-full ${statusColor[selectedOrder.status]}`}>
-                      {statusLabel[selectedOrder.status]}
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="mb-1 text-xs text-gray-400">Status</p>
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs ${statusColor[selectedOrder.status] || ""}`}
+                    >
+                      {statusLabel[selectedOrder.status] || selectedOrder.status}
                     </span>
                   </div>
 
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-2">商品</p>
-                    {selectedOrder.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                        </div>
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="mb-1 text-xs text-gray-400">Customer</p>
+                    <p className="text-sm text-gray-700">
+                      {selectedOrder.users?.display_name || "Unknown"}
+                    </p>
+                    <p className="text-xs text-gray-500">{selectedOrder.users?.email || ""}</p>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <p className="mb-2 text-xs text-gray-400">Items</p>
+                    {(selectedOrder.items || []).map((item, idx) => (
+                      <div key={idx} className="mb-2 flex items-center gap-3">
+                        {item.image_url && (
+                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg">
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        )}
                         <div className="flex-1">
                           <p className="text-sm text-gray-900">{item.name}</p>
                           <p className="text-xs text-gray-400">
-                            x{item.quantity} ¥{item.price.toLocaleString()}
+                            x{item.quantity} Y{item.price.toLocaleString()}
                           </p>
                         </div>
                       </div>
                     ))}
-                    <div className="border-t border-gray-200 mt-2 pt-2">
-                      <p className="text-sm font-bold text-gray-900 text-right">
-                        合計: ¥{selectedOrder.total.toLocaleString()}
+                    <div className="mt-2 border-t border-gray-200 pt-2">
+                      <p className="text-right text-sm font-bold text-gray-900">
+                        Total: Y{selectedOrder.total.toLocaleString()}
                       </p>
                     </div>
                   </div>
 
                   {/* Donation amount in detail */}
-                  {selectedOrder.donationAmount > 0 && (
-                    <div className="bg-[#2A9D8F]/5 rounded-xl p-4 border border-[#2A9D8F]/20">
-                      <p className="text-xs text-[#2A9D8F] mb-1">🌟 この注文からの寄付額</p>
+                  {(selectedOrder.donation_amount || 0) > 0 && (
+                    <div className="rounded-xl border border-[#2A9D8F]/20 bg-[#2A9D8F]/5 p-4">
+                      <p className="mb-1 text-xs text-[#2A9D8F]">Donation from this order</p>
                       <p className="text-lg font-bold text-[#2A9D8F]">
-                        ¥{selectedOrder.donationAmount.toLocaleString()}
+                        Y{selectedOrder.donation_amount.toLocaleString()}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">売上の5%が保護団体へ寄付されます</p>
                     </div>
                   )}
 
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-1">配送先</p>
-                    <p className="text-sm text-gray-700">{selectedOrder.shippingAddress}</p>
-                  </div>
+                  {selectedOrder.shipping_address && (
+                    <div className="rounded-xl bg-gray-50 p-4">
+                      <p className="mb-1 text-xs text-gray-400">Shipping Address</p>
+                      <p className="text-sm text-gray-700">{selectedOrder.shipping_address}</p>
+                    </div>
+                  )}
 
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">追跡番号</label>
+                    <label className="mb-1 block text-xs text-gray-500">Tracking Number</label>
                     <input
                       type="text"
                       value={trackingInput}
                       onChange={(e) => setTrackingInput(e.target.value)}
-                      placeholder="追跡番号を入力..."
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+                      placeholder="Enter tracking number..."
+                      className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">管理者メモ</label>
+                    <label className="mb-1 block text-xs text-gray-500">Admin Notes</label>
                     <textarea
                       value={adminNotes}
                       onChange={(e) => setAdminNotes(e.target.value)}
-                      placeholder="メモを入力..."
+                      placeholder="Enter notes..."
                       rows={3}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] resize-none"
+                      className="w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                     />
                   </div>
 
-                  <button className="w-full bg-[#2A9D8F] text-white py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition-all duration-200">
-                    更新を保存
+                  <button className="w-full rounded-xl bg-[#2A9D8F] py-3 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90">
+                    Save Changes
                   </button>
                 </div>
               </div>

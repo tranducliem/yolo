@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { mockPets } from "@/lib/mockData";
 import { useAuth } from "@/hooks/useAuth";
 import AmbassadorBadge from "@/components/features/ambassador/AmbassadorBadge";
 
@@ -26,7 +25,11 @@ export default function SideNav() {
   const { isLoggedIn, user, logout } = useAuth();
   if (!isLoggedIn) return null;
 
-  const me = mockPets[0];
+  const petAvatarUrl =
+    user?.pets?.[0]?.avatarUrl || user?.avatarUrl || "/images/default-avatar.png";
+  const petDisplayName = user?.petName || user?.displayName || "ペット";
+  const petBreed = user?.pets?.[0]?.breed || "";
+
   return (
     <aside className="fixed top-0 bottom-0 left-0 z-50 hidden w-60 flex-col border-r border-gray-100 bg-white shadow-sm lg:flex">
       <div className="p-6">
@@ -69,17 +72,13 @@ export default function SideNav() {
       <div className="border-t border-gray-100 p-4">
         <div className="mb-3 flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={user?.pets?.[0]?.avatarUrl || user?.avatarUrl || me.imageUrl}
-            alt=""
-            className="h-10 w-10 rounded-full object-cover"
-          />
+          <img src={petAvatarUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
           <div>
             <div className="flex items-center gap-1">
-              <p className="text-sm font-bold">{user?.petName || me.name}</p>
+              <p className="text-sm font-bold">{petDisplayName}</p>
               <AmbassadorBadge level={user?.ambassadorLevel ?? 0} compact />
             </div>
-            <p className="text-[10px] text-gray-400">{user?.pets?.[0]?.breed || me.breed}</p>
+            <p className="text-[10px] text-gray-400">{petBreed}</p>
           </div>
         </div>
         <button

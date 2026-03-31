@@ -1,18 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockAdminUsers, ambassadorRanks } from "@/lib/mockData";
-import type { MockAdminUser } from "@/types";
+import { AMBASSADOR_RANKS } from "@/config/ambassador";
 
-const planLabel: Record<MockAdminUser["plan"], string> = {
+interface AdminUser {
+  id: string;
+  display_name: string;
+  email: string;
+  avatar_url: string | null;
+  plan: "free" | "plus" | "pro" | "family";
+  ambassador_level: number;
+  donation_total: number;
+  paw_points: number;
+  is_admin: boolean;
+  is_banned: boolean;
+  created_at: string;
+}
+
+const planLabel: Record<string, string> = {
   free: "Free",
   plus: "YOLO+",
   pro: "PRO",
   family: "FAMILY",
 };
 
-const planColor: Record<MockAdminUser["plan"], string> = {
+const planColor: Record<string, string> = {
   free: "bg-gray-100 text-gray-600",
   plus: "bg-blue-50 text-blue-600",
   pro: "bg-purple-50 text-purple-600",
@@ -20,7 +33,7 @@ const planColor: Record<MockAdminUser["plan"], string> = {
 };
 
 const ambassadorBadge = (level: number) => {
-  const rank = ambassadorRanks.find((r) => r.level === level);
+  const rank = AMBASSADOR_RANKS.find((r) => r.level === level);
   if (!rank || level === 0) return null;
   const bgColors: Record<number, string> = {
     1: "bg-green-50 text-green-700 border-green-200",
@@ -30,82 +43,118 @@ const ambassadorBadge = (level: number) => {
     5: "bg-gradient-to-r from-yellow-50 to-orange-50 text-orange-700 border-orange-200",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${bgColors[level] || ""}`}>
+    <span
+      className={`rounded-full border px-2 py-0.5 text-xs font-medium ${bgColors[level] || ""}`}
+    >
       {rank.emoji} Lv{level}
     </span>
   );
 };
 
 export default function UsersAdminPage() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [filterPlan, setFilterPlan] = useState<string>("all");
-  const [filterPetType, setFilterPetType] = useState<string>("all");
   const [filterAmbassador, setFilterAmbassador] = useState<string>("all");
-  const [selectedUser, setSelectedUser] = useState<MockAdminUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
 
-  const filtered = mockAdminUsers.filter((u) => {
-    if (filterPlan !== "all" && u.plan !== filterPlan) return false;
-    if (filterPetType !== "all") {
-      const match = u.pets.some((p) => p.species === filterPetType);
-      if (!match) return false;
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterPlan !== "all") params.set("plan", filterPlan);
+      const res = await fetch(`/api/admin/users?${params.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setUsers(data.users || []);
+      setTotal(data.total || 0);
+    } catch {
+      // Show empty state
+    } finally {
+      setLoading(false);
     }
+  }, [filterPlan]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const filtered = users.filter((u) => {
     if (filterAmbassador !== "all") {
-      if (filterAmbassador === "0" && u.ambassadorLevel !== 0) return false;
-      if (filterAmbassador !== "0" && u.ambassadorLevel !== Number(filterAmbassador)) return false;
+      if (filterAmbassador === "0" && u.ambassador_level !== 0) return false;
+      if (filterAmbassador !== "0" && u.ambassador_level !== Number(filterAmbassador)) return false;
     }
     return true;
   });
 
-  const totalUsers = 82345;
-  const newThisMonth = 3456;
-  const activeRate = 42;
-  const avgArpu = 3280;
+  // Ambassador level distribution
+  const ambassadorDistribution = AMBASSADOR_RANKS.map((rank) => ({
+    ...rank,
+    count: users.filter((u) => u.ambassador_level === rank.level).length,
+  }));
+  const noAmbassadorCount = users.filter((u) => u.ambassador_level === 0).length;
+  const totalUsersForBar = users.length || 1;
 
   const kpis = [
-    { icon: "👥", label: "総ユーザー", value: totalUsers.toLocaleString() },
-    { icon: "🆕", label: "今月新規", value: newThisMonth.toLocaleString() },
-    { icon: "📊", label: "アクティブ率", value: `${activeRate}%` },
-    { icon: "💰", label: "平均ARPU", value: `¥${avgArpu.toLocaleString()}` },
+    { icon: "👥", label: "Total Users", value: total.toLocaleString() },
+    {
+      icon: "💎",
+      label: "Paid Users",
+      value: users.filter((u) => u.plan !== "free").length.toLocaleString(),
+    },
+    {
+      icon: "🌟",
+      label: "Ambassadors",
+      value: users.filter((u) => u.ambassador_level > 0).length.toLocaleString(),
+    },
+    {
+      icon: "🚫",
+      label: "Banned",
+      value: users.filter((u) => u.is_banned).length.toLocaleString(),
+    },
   ];
 
-  // Ambassador level distribution
-  const ambassadorDistribution = ambassadorRanks.map((rank) => ({
-    ...rank,
-    count: mockAdminUsers.filter((u) => u.ambassadorLevel === rank.level).length,
-  }));
-  const noAmbassadorCount = mockAdminUsers.filter((u) => u.ambassadorLevel === 0).length;
-
-  // Mock billing history
-  const mockBilling = [
-    { date: "2026-03-01", amount: 1480, plan: "PRO" },
-    { date: "2026-02-01", amount: 1480, plan: "PRO" },
-    { date: "2026-01-01", amount: 480, plan: "YOLO+" },
-  ];
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6 h-9 w-48 animate-pulse rounded-lg bg-gray-200" />
+        <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
+          ))}
+        </div>
+        <div className="mb-8 h-48 animate-pulse rounded-2xl bg-gray-100" />
+        <div className="h-64 animate-pulse rounded-2xl bg-gray-100" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-[#0D1B2A] mb-6"
+        className="mb-6 text-3xl font-bold text-[#0D1B2A]"
       >
-        ユーザー管理
+        User Management
       </motion.h1>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpis.map((kpi, i) => (
           <motion.div
             key={kpi.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <span className="text-xl">{kpi.icon}</span>
               <span className="text-sm text-gray-500">{kpi.label}</span>
             </div>
-            <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">{kpi.value}</p>
+            <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">{kpi.value}</p>
           </motion.div>
         ))}
       </div>
@@ -115,48 +164,49 @@ export default function UsersAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.35 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-8"
+        className="mb-8 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
       >
-        <h3 className="text-sm font-semibold text-gray-700 mb-4">🌟 アンバサダー分布</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-gray-50 rounded-xl p-3 text-center">
-            <p className="text-xs text-gray-400 mb-1">未取得</p>
-            <p className="text-xl font-bold tabular-nums text-gray-700">{noAmbassadorCount}</p>
-            <p className="text-[10px] text-gray-400">人</p>
+        <h3 className="mb-4 text-sm font-semibold text-gray-700">Ambassador Distribution</h3>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+          <div className="rounded-xl bg-gray-50 p-3 text-center">
+            <p className="mb-1 text-xs text-gray-400">None</p>
+            <p className="text-xl font-bold text-gray-700 tabular-nums">{noAmbassadorCount}</p>
           </div>
           {ambassadorDistribution.map((rank) => (
             <div
               key={rank.level}
-              className="bg-gradient-to-b from-[#2A9D8F]/5 to-white rounded-xl p-3 text-center border border-[#2A9D8F]/10"
+              className="rounded-xl border border-[#2A9D8F]/10 bg-gradient-to-b from-[#2A9D8F]/5 to-white p-3 text-center"
             >
-              <p className="text-xs text-gray-500 mb-1">
+              <p className="mb-1 text-xs text-gray-500">
                 {rank.emoji} Lv{rank.level}
               </p>
-              <p className="text-xl font-bold tabular-nums text-[#0D1B2A]">{rank.count}</p>
+              <p className="text-xl font-bold text-[#0D1B2A] tabular-nums">{rank.count}</p>
               <p className="text-[10px] text-gray-400">{rank.name}</p>
             </div>
           ))}
         </div>
         {/* Mini bar chart */}
-        <div className="mt-4 flex items-end gap-1 h-12">
-          <div className="flex-1 flex flex-col items-center">
+        <div className="mt-4 flex h-12 items-end gap-1">
+          <div className="flex flex-1 flex-col items-center">
             <div
-              className="w-full bg-gray-300 rounded-t-sm"
-              style={{ height: `${Math.max(4, (noAmbassadorCount / mockAdminUsers.length) * 100)}%` }}
+              className="w-full rounded-t-sm bg-gray-300"
+              style={{
+                height: `${Math.max(4, (noAmbassadorCount / totalUsersForBar) * 100)}%`,
+              }}
             />
-            <span className="text-[9px] text-gray-400 mt-1">-</span>
+            <span className="mt-1 text-[9px] text-gray-400">-</span>
           </div>
           {ambassadorDistribution.map((rank) => (
-            <div key={rank.level} className="flex-1 flex flex-col items-center">
+            <div key={rank.level} className="flex flex-1 flex-col items-center">
               <div
                 className="w-full rounded-t-sm"
                 style={{
-                  height: `${Math.max(4, (rank.count / mockAdminUsers.length) * 100)}%`,
+                  height: `${Math.max(4, (rank.count / totalUsersForBar) * 100)}%`,
                   backgroundColor: "#2A9D8F",
                   opacity: 0.4 + rank.level * 0.12,
                 }}
               />
-              <span className="text-[9px] text-gray-400 mt-1">L{rank.level}</span>
+              <span className="mt-1 text-[9px] text-gray-400">L{rank.level}</span>
             </div>
           ))}
         </div>
@@ -167,17 +217,17 @@ export default function UsersAdminPage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 mb-6"
+        className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-wrap gap-4">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">プラン</label>
+            <label className="mb-1 block text-xs text-gray-500">Plan</label>
             <select
               value={filterPlan}
               onChange={(e) => setFilterPlan(e.target.value)}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
             >
-              <option value="all">すべて</option>
+              <option value="all">All</option>
               <option value="free">Free</option>
               <option value="plus">YOLO+</option>
               <option value="pro">PRO</option>
@@ -185,46 +235,20 @@ export default function UsersAdminPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">ペット種別</label>
-            <select
-              value={filterPetType}
-              onChange={(e) => setFilterPetType(e.target.value)}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-            >
-              <option value="all">すべて</option>
-              <option value="dog">犬</option>
-              <option value="cat">猫</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">アンバサダー</label>
+            <label className="mb-1 block text-xs text-gray-500">Ambassador</label>
             <select
               value={filterAmbassador}
               onChange={(e) => setFilterAmbassador(e.target.value)}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
+              className="rounded-xl border border-gray-200 px-4 py-2 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
             >
-              <option value="all">すべて</option>
-              <option value="0">未取得</option>
-              {ambassadorRanks.map((r) => (
+              <option value="all">All</option>
+              <option value="0">None</option>
+              {AMBASSADOR_RANKS.map((r) => (
                 <option key={r.level} value={String(r.level)}>
                   {r.emoji} Lv{r.level} {r.name}
                 </option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">期間</label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-              />
-              <span className="self-center text-gray-400">〜</span>
-              <input
-                type="date"
-                className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F]"
-              />
-            </div>
           </div>
         </div>
       </motion.div>
@@ -234,58 +258,75 @@ export default function UsersAdminPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+        className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
       >
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#0D1B2A] text-white">
-                <th className="text-left py-3 px-2 font-medium rounded-tl-lg">ID</th>
-                <th className="text-left py-3 px-2 font-medium">名前</th>
-                <th className="text-left py-3 px-2 font-medium">メール</th>
-                <th className="text-center py-3 px-2 font-medium">プラン</th>
-                <th className="text-center py-3 px-2 font-medium">アンバサダー</th>
-                <th className="text-right py-3 px-2 font-medium">寄付累計</th>
-                <th className="text-right py-3 px-2 font-medium">ARPU</th>
-                <th className="text-left py-3 px-2 font-medium rounded-tr-lg">最終ログイン</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((user, userIdx) => (
-                <tr
-                  key={user.id}
-                  className={`border-b border-gray-50 hover:bg-gray-100 transition-all duration-200 cursor-pointer ${userIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
-                  onClick={() => setSelectedUser(user)}
-                >
-                  <td className="py-3 px-2 text-gray-400 font-mono text-xs">{user.id}</td>
-                  <td className="py-3 px-2 font-medium text-gray-900">{user.name}</td>
-                  <td className="py-3 px-2 text-gray-600 text-xs">{user.email}</td>
-                  <td className="py-3 px-2 text-center">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${planColor[user.plan]}`}>
-                      {planLabel[user.plan]}
-                    </span>
-                  </td>
-                  <td className="py-3 px-2 text-center">
-                    {user.ambassadorLevel > 0 ? (
-                      ambassadorBadge(user.ambassadorLevel)
-                    ) : (
-                      <span className="text-gray-300 text-xs">-</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-right">
-                    {user.donationTotal > 0 ? (
-                      <span className="text-[#2A9D8F] font-medium">¥{user.donationTotal.toLocaleString()}</span>
-                    ) : (
-                      <span className="text-gray-300">-</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-2 text-right text-gray-900">¥{user.arpu.toLocaleString()}</td>
-                  <td className="py-3 px-2 text-gray-600 text-xs">{user.lastLogin}</td>
+        {filtered.length === 0 ? (
+          <div className="py-16 text-center text-gray-400">No users found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-[#0D1B2A] text-white">
+                  <th className="rounded-tl-lg px-2 py-3 text-left font-medium">Name</th>
+                  <th className="px-2 py-3 text-left font-medium">Email</th>
+                  <th className="px-2 py-3 text-center font-medium">Plan</th>
+                  <th className="px-2 py-3 text-center font-medium">Ambassador</th>
+                  <th className="px-2 py-3 text-right font-medium">Donations</th>
+                  <th className="px-2 py-3 text-right font-medium">Paw Points</th>
+                  <th className="rounded-tr-lg px-2 py-3 text-left font-medium">Registered</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filtered.map((user, userIdx) => (
+                  <tr
+                    key={user.id}
+                    className={`cursor-pointer border-b border-gray-50 transition-all duration-200 hover:bg-gray-100 ${userIdx % 2 === 1 ? "bg-gray-50/50" : ""}`}
+                    onClick={() => setSelectedUser(user)}
+                  >
+                    <td className="px-2 py-3 font-medium text-gray-900">
+                      {user.display_name || "Unknown"}
+                      {user.is_banned && (
+                        <span className="ml-2 rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] text-red-600">
+                          Banned
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 text-xs text-gray-600">{user.email}</td>
+                    <td className="px-2 py-3 text-center">
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${planColor[user.plan] || planColor.free}`}
+                      >
+                        {planLabel[user.plan] || user.plan}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      {user.ambassador_level > 0 ? (
+                        ambassadorBadge(user.ambassador_level)
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      {user.donation_total > 0 ? (
+                        <span className="font-medium text-[#2A9D8F]">
+                          Y{user.donation_total.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 text-right text-gray-900">
+                      {user.paw_points.toLocaleString()}
+                    </td>
+                    <td className="px-2 py-3 text-xs text-gray-600">
+                      {new Date(user.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </motion.div>
 
       {/* User Detail Slide Panel */}
@@ -304,133 +345,116 @@ export default function UsersAdminPage() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="relative w-full max-w-md bg-white h-full shadow-xl overflow-y-auto"
+              className="relative h-full w-full max-w-md overflow-y-auto bg-white shadow-xl"
             >
               <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-gray-900">ユーザー詳細</h3>
+                <div className="mb-6 flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-gray-900">User Details</h3>
                   <button
                     onClick={() => setSelectedUser(null)}
-                    className="text-gray-400 hover:text-gray-700 text-xl"
+                    className="text-xl text-gray-400 hover:text-gray-700"
                   >
-                    ✕
+                    X
                   </button>
                 </div>
 
                 <div className="space-y-4">
                   {/* Basic Info */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-semibold text-gray-700">{selectedUser.name}</h4>
+                  <div className="rounded-xl bg-gray-50 p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        {selectedUser.display_name || "Unknown"}
+                      </h4>
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${planColor[selectedUser.plan]}`}>
-                          {planLabel[selectedUser.plan]}
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs font-medium ${planColor[selectedUser.plan] || planColor.free}`}
+                        >
+                          {planLabel[selectedUser.plan] || selectedUser.plan}
                         </span>
-                        {selectedUser.ambassadorLevel > 0 && ambassadorBadge(selectedUser.ambassadorLevel)}
+                        {selectedUser.ambassador_level > 0 &&
+                          ambassadorBadge(selectedUser.ambassador_level)}
                       </div>
                     </div>
                     <p className="text-xs text-gray-500">{selectedUser.email}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      登録: {selectedUser.registeredAt} / 最終ログイン: {selectedUser.lastLogin}
+                    <p className="mt-1 text-xs text-gray-400">
+                      Registered: {new Date(selectedUser.created_at).toLocaleDateString()}
                     </p>
+                    {selectedUser.is_admin && (
+                      <span className="mt-2 inline-block rounded-full bg-purple-50 px-2 py-0.5 text-[10px] text-purple-600">
+                        Admin
+                      </span>
+                    )}
+                    {selectedUser.is_banned && (
+                      <span className="mt-2 ml-1 inline-block rounded-full bg-red-50 px-2 py-0.5 text-[10px] text-red-600">
+                        Banned
+                      </span>
+                    )}
                   </div>
 
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-gray-50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-400">投稿数</p>
-                      <p className="text-lg font-bold text-gray-900">{selectedUser.postCount}</p>
+                    <div className="rounded-xl bg-gray-50 p-3 text-center">
+                      <p className="text-xs text-gray-400">Paw Points</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        {selectedUser.paw_points.toLocaleString()}
+                      </p>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-400">いいね</p>
-                      <p className="text-lg font-bold text-gray-900">{selectedUser.likeCount}</p>
+                    <div className="rounded-xl bg-gray-50 p-3 text-center">
+                      <p className="text-xs text-gray-400">Donations</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        Y{selectedUser.donation_total.toLocaleString()}
+                      </p>
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-3 text-center">
-                      <p className="text-xs text-gray-400">Crown</p>
-                      <p className="text-lg font-bold text-gray-900">{selectedUser.crownCount}</p>
+                    <div className="rounded-xl bg-gray-50 p-3 text-center">
+                      <p className="text-xs text-gray-400">Ambassador</p>
+                      <p className="text-lg font-bold text-gray-900">
+                        Lv{selectedUser.ambassador_level}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Donation / Ambassador Detail */}
-                  <div className="bg-[#2A9D8F]/5 rounded-xl p-4 border border-[#2A9D8F]/20">
-                    <h4 className="text-xs text-[#2A9D8F] font-semibold mb-3">寄付・アンバサダー情報</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-gray-500">寄付累計額</p>
-                        <p className="text-lg font-bold text-[#0D1B2A]">
-                          ¥{selectedUser.donationTotal.toLocaleString()}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500">アンバサダーLv</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {selectedUser.ambassadorLevel > 0 ? (
-                            <>
-                              {ambassadorBadge(selectedUser.ambassadorLevel)}
-                              <span className="text-sm text-gray-700">
-                                {ambassadorRanks.find((r) => r.level === selectedUser.ambassadorLevel)?.name}
-                              </span>
-                            </>
-                          ) : (
-                            <span className="text-sm text-gray-400">未取得</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    {selectedUser.ambassadorLevel > 0 && (
-                      <div className="mt-3 pt-3 border-t border-[#2A9D8F]/10">
-                        <p className="text-xs text-gray-500 mb-1">寄付倍率</p>
-                        <p className="text-sm font-semibold text-[#2A9D8F]">
-                          x{ambassadorRanks.find((r) => r.level === selectedUser.ambassadorLevel)?.donationMultiplier}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Pets */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-2">ペット一覧</p>
-                    {selectedUser.pets.map((pet, idx) => (
-                      <div key={idx} className="flex items-center gap-2 mb-1">
-                        <span className="text-sm">{pet.species === "dog" ? "🐶" : "🐱"}</span>
+                  {/* Ambassador Detail */}
+                  {selectedUser.ambassador_level > 0 && (
+                    <div className="rounded-xl border border-[#2A9D8F]/20 bg-[#2A9D8F]/5 p-4">
+                      <h4 className="mb-3 text-xs font-semibold text-[#2A9D8F]">Ambassador Info</h4>
+                      <div className="flex items-center gap-2">
+                        {ambassadorBadge(selectedUser.ambassador_level)}
                         <span className="text-sm text-gray-700">
-                          {pet.name}（{pet.breed}）
+                          {
+                            AMBASSADOR_RANKS.find((r) => r.level === selectedUser.ambassador_level)
+                              ?.name
+                          }
                         </span>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Billing History */}
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-xs text-gray-400 mb-2">課金履歴</p>
-                    {mockBilling.map((b, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0"
-                      >
-                        <span className="text-xs text-gray-600">{b.date}</span>
-                        <span className="text-xs text-gray-500">{b.plan}</span>
-                        <span className="text-xs font-medium text-gray-900">¥{b.amount.toLocaleString()}</span>
+                      <div className="mt-3 border-t border-[#2A9D8F]/10 pt-3">
+                        <p className="mb-1 text-xs text-gray-500">Donation Multiplier</p>
+                        <p className="text-sm font-semibold text-[#2A9D8F]">
+                          x
+                          {
+                            AMBASSADOR_RANKS.find((r) => r.level === selectedUser.ambassador_level)
+                              ?.donationMultiplier
+                          }
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Admin Notes */}
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">管理者メモ</label>
+                    <label className="mb-1 block text-xs text-gray-500">Admin Notes</label>
                     <textarea
-                      placeholder="メモを入力..."
+                      placeholder="Enter notes..."
                       rows={3}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2A9D8F] resize-none"
+                      className="w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:ring-2 focus:ring-[#2A9D8F] focus:outline-none"
                     />
                   </div>
 
                   <div className="flex gap-3">
-                    <button className="flex-1 bg-[#2A9D8F] text-white py-3 rounded-xl font-semibold text-sm hover:opacity-90 transition-all duration-200">
-                      保存
+                    <button className="flex-1 rounded-xl bg-[#2A9D8F] py-3 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90">
+                      Save
                     </button>
-                    <button className="bg-red-50 text-red-600 py-3 px-6 rounded-xl font-semibold text-sm hover:bg-red-100 transition-all duration-200">
-                      アカウント停止
+                    <button className="rounded-xl bg-red-50 px-6 py-3 text-sm font-semibold text-red-600 transition-all duration-200 hover:bg-red-100">
+                      Ban Account
                     </button>
                   </div>
                 </div>

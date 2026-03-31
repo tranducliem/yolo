@@ -1,36 +1,64 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { mockKPIData } from "@/lib/mockData";
+
+interface AdminStats {
+  totalUsers: number;
+  paidUsers: number;
+  paidRate: number;
+  totalPosts: number;
+  totalOrders: number;
+  totalDonation: number;
+  totalRevenue: number;
+}
 
 const realtimeEvents = [
-  "🐾 ユイ(東京)がベストショットをシェア",
-  "👑 モカが今日のCrownに選出！",
-  "⚔️ ラテ vs コタロウのBattleが開始",
-  "🎯 「#おやつタイム」に新しい投稿",
-  "💎 佐藤アヤさんがPROプランに加入",
-  "📦 注文 YOLO-20260327-012 が発送完了",
-  "🐶 新規登録: マルくん(ポメラニアン)",
-  "❤️ ミケの写真が100いいね達成",
-  "🎵 コタロウのSongが生成完了",
-  "💌 レオからのLetterが届きました",
-  "🌟 田中さくらさんが寄付タグで投稿",
-  "🏆 福岡地域アンバサダーが更新されました",
+  "New user registered",
+  "Crown selected for today",
+  "Battle started",
+  "New dare post submitted",
+  "PRO plan subscribed",
+  "Order shipped",
+  "New pet registered",
+  "Photo reached 100 likes",
+  "Song generated",
+  "Letter received",
+  "Donation tag post",
+  "Regional ambassador updated",
 ];
 
 const pmfMetrics = [
-  { label: "DL", current: 24567, target: 30000, unit: "" },
-  { label: "有料率", current: 18.5, target: 30, unit: "%" },
-  { label: "DAU/MAU", current: 42, target: 40, unit: "%" },
-  { label: "ARPU", current: 3280, target: 3500, unit: "¥" },
-  { label: "NPS", current: 52, target: 50, unit: "" },
+  { label: "DL", current: 0, target: 30000, unit: "" },
+  { label: "Paid Rate", current: 0, target: 30, unit: "%" },
+  { label: "DAU/MAU", current: 0, target: 40, unit: "%" },
+  { label: "ARPU", current: 0, target: 3500, unit: "Y" },
+  { label: "NPS", current: 0, target: 50, unit: "" },
 ];
 
 export default function AdminDashboard() {
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<string[]>([realtimeEvents[0]]);
   const [, setEventIndex] = useState(1);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/stats");
+      if (!res.ok) return;
+      const data = await res.json();
+      setStats(data);
+    } catch {
+      // Show empty state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -44,58 +72,120 @@ export default function AdminDashboard() {
   }, []);
 
   const kpiCards = [
-    { icon: "📱", label: "MAU", value: "82,345", change: "+12.3%", sub: "人", href: "/admin/users" },
-    { icon: "📅", label: "DAU", value: "34,567", change: "+8.7%", sub: "人", href: "/admin/analytics" },
-    { icon: "💰", label: "MRR", value: "¥4,234,500", change: "+15.2%", sub: "", href: "/admin/subscription" },
-    { icon: "💎", label: "課金率", value: "18.5%", change: "+2.1pt", sub: "", href: "/admin/subscription" },
+    {
+      icon: "👥",
+      label: "Total Users",
+      value: stats ? stats.totalUsers.toLocaleString() : "0",
+      sub: "",
+      href: "/admin/users",
+    },
+    {
+      icon: "💎",
+      label: "Paid Users",
+      value: stats ? stats.paidUsers.toLocaleString() : "0",
+      sub: "",
+      href: "/admin/subscription",
+    },
+    {
+      icon: "📝",
+      label: "Total Posts",
+      value: stats ? stats.totalPosts.toLocaleString() : "0",
+      sub: "",
+      href: "/admin/content",
+    },
+    {
+      icon: "📦",
+      label: "Total Orders",
+      value: stats ? stats.totalOrders.toLocaleString() : "0",
+      sub: "",
+      href: "/admin/orders",
+    },
   ];
 
   const donationKpis = [
-    { icon: "🌟", label: "今月寄付額", value: "¥523,400", change: "+18.5%", href: "/admin/donation" },
-    { icon: "🤝", label: "寄付者数", value: "12,847", change: "+9.3%", href: "/admin/donation" },
-    { icon: "🏠", label: "寄付先施設数", value: "3", change: "", href: "/admin/donation" },
+    {
+      icon: "🌟",
+      label: "Total Donations",
+      value: stats ? `Y${stats.totalDonation.toLocaleString()}` : "Y0",
+      href: "/admin/donation",
+    },
+    {
+      icon: "💰",
+      label: "Total Revenue",
+      value: stats ? `Y${stats.totalRevenue.toLocaleString()}` : "Y0",
+      href: "/admin/orders",
+    },
+    {
+      icon: "📊",
+      label: "Paid Rate",
+      value: stats ? `${stats.paidRate}%` : "0%",
+      href: "/admin/subscription",
+    },
   ];
 
-  const maxDau = Math.max(...mockKPIData.map((d) => d.dau));
-  const maxMrr = Math.max(...mockKPIData.map((d) => d.mrr));
-  const maxDonation = Math.max(...mockKPIData.map((d) => d.donationTotal));
+  const computedPmf = pmfMetrics.map((m) => {
+    if (!stats) return m;
+    if (m.label === "DL") return { ...m, current: stats.totalUsers };
+    if (m.label === "Paid Rate") return { ...m, current: stats.paidRate };
+    return m;
+  });
 
-  const pmfPassed = pmfMetrics.filter((m) => m.current >= m.target).length;
+  const pmfPassed = computedPmf.filter((m) => m.current >= m.target).length;
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6 h-9 w-64 animate-pulse rounded-lg bg-gray-200" />
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-32 animate-pulse rounded-2xl bg-gray-100" />
+          ))}
+        </div>
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-2xl bg-gray-100" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:col-span-2">
+            {[...Array(2)].map((_, i) => (
+              <div key={i} className="h-56 animate-pulse rounded-2xl bg-gray-100" />
+            ))}
+          </div>
+          <div className="h-56 animate-pulse rounded-2xl bg-gray-100" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
       <motion.h1
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-3xl font-bold text-[#0D1B2A] mb-6"
+        className="mb-6 text-3xl font-bold text-[#0D1B2A]"
       >
-        KPI ダッシュボード
+        KPI Dashboard
       </motion.h1>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpiCards.map((kpi, i) => (
           <Link key={kpi.label} href={kpi.href}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.08 }}
-              className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+              className="cursor-pointer rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="flex items-center gap-2 mb-2">
+              <div className="mb-2 flex items-center gap-2">
                 <span className="text-xl">{kpi.icon}</span>
                 <span className="text-sm text-gray-500">{kpi.label}</span>
               </div>
-              <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">
+              <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">
                 {kpi.value}
-                <span className="text-xs text-gray-400 ml-1">{kpi.sub}</span>
+                <span className="ml-1 text-xs text-gray-400">{kpi.sub}</span>
               </p>
-              <span className="text-sm text-emerald-600 flex items-center gap-1 mt-1">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path d="M6 2L10 7H2L6 2Z" fill="currentColor" />
-                </svg>
-                {kpi.change}
-              </span>
             </motion.div>
           </Link>
         ))}
@@ -106,112 +196,60 @@ export default function AdminDashboard() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.35 }}
-        className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8"
+        className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3"
       >
         {donationKpis.map((kpi) => (
           <Link key={kpi.label} href={kpi.href}>
-            <div
-              className="bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 rounded-2xl p-5 border border-[#2A9D8F]/20 hover:shadow-md hover:-translate-y-0.5 hover:border-[#2A9D8F]/40 transition-all duration-200 cursor-pointer"
-            >
-              <div className="flex items-center gap-2 mb-2">
+            <div className="cursor-pointer rounded-2xl border border-[#2A9D8F]/20 bg-gradient-to-r from-[#2A9D8F]/10 to-[#2A9D8F]/5 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#2A9D8F]/40 hover:shadow-md">
+              <div className="mb-2 flex items-center gap-2">
                 <span className="text-xl">{kpi.icon}</span>
-                <span className="text-sm text-[#2A9D8F] font-medium">{kpi.label}</span>
+                <span className="text-sm font-medium text-[#2A9D8F]">{kpi.label}</span>
               </div>
-              <p className="text-3xl font-bold tabular-nums text-[#0D1B2A]">{kpi.value}</p>
-              {kpi.change && (
-                <span className="text-sm text-[#2A9D8F] flex items-center gap-1 mt-1">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M6 2L10 7H2L6 2Z" fill="currentColor" />
-                  </svg>
-                  {kpi.change}
-                </span>
-              )}
+              <p className="text-3xl font-bold text-[#0D1B2A] tabular-nums">{kpi.value}</p>
             </div>
           </Link>
         ))}
       </motion.div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
-        {/* Charts area */}
-        <div className="xl:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* DAU Chart */}
+      <div className="mb-8 grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {/* Empty charts area - no mock data */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:col-span-2">
+          {/* DAU Chart placeholder */}
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.4 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
           >
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">DAU推移（30日間）</h3>
-            <div className="flex items-end gap-[2px] h-40">
-              {mockKPIData.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
-                  <div
-                    className="w-full rounded-t-sm min-h-[2px] transition-all"
-                    style={{
-                      height: `${(d.dau / maxDau) * 100}%`,
-                      backgroundColor: "#2A9D8F",
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[10px] text-gray-400">{mockKPIData[0].date}</span>
-              <span className="text-[10px] text-gray-400">{mockKPIData[mockKPIData.length - 1].date}</span>
+            <h3 className="mb-4 text-sm font-semibold text-gray-700">DAU Trend (30 days)</h3>
+            <div className="flex h-40 items-center justify-center text-sm text-gray-300">
+              No data yet
             </div>
           </motion.div>
 
-          {/* MRR Chart */}
+          {/* MRR Chart placeholder */}
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.5 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
           >
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">MRR推移（30日間）</h3>
-            <div className="flex items-end gap-[2px] h-40">
-              {mockKPIData.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
-                  <div
-                    className="w-full rounded-t-sm min-h-[2px] transition-all"
-                    style={{
-                      height: `${(d.mrr / maxMrr) * 100}%`,
-                      backgroundColor: "#D4A843",
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[10px] text-gray-400">{mockKPIData[0].date}</span>
-              <span className="text-[10px] text-gray-400">{mockKPIData[mockKPIData.length - 1].date}</span>
+            <h3 className="mb-4 text-sm font-semibold text-gray-700">MRR Trend (30 days)</h3>
+            <div className="flex h-40 items-center justify-center text-sm text-gray-300">
+              No data yet
             </div>
           </motion.div>
 
-          {/* Donation Chart */}
+          {/* Donation Chart placeholder */}
           <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.6 }}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 md:col-span-2"
+            className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm md:col-span-2"
           >
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">🌟 寄付額推移（30日間）</h3>
-            <div className="flex items-end gap-[2px] h-32">
-              {mockKPIData.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
-                  <div
-                    className="w-full rounded-t-sm min-h-[2px] transition-all"
-                    style={{
-                      height: `${(d.donationTotal / maxDonation) * 100}%`,
-                      background: "linear-gradient(to top, #2A9D8F, #2A9D8F80)",
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-between mt-2">
-              <span className="text-[10px] text-gray-400">{mockKPIData[0].date}</span>
-              <span className="text-[10px] text-gray-400">{mockKPIData[mockKPIData.length - 1].date}</span>
+            <h3 className="mb-4 text-sm font-semibold text-gray-700">Donation Trend (30 days)</h3>
+            <div className="flex h-32 items-center justify-center text-sm text-gray-300">
+              No data yet
             </div>
           </motion.div>
         </div>
@@ -221,9 +259,9 @@ export default function AdminDashboard() {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.5 }}
-          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+          className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
         >
-          <h3 className="text-sm font-semibold text-gray-700 mb-4">リアルタイムフィード</h3>
+          <h3 className="mb-4 text-sm font-semibold text-gray-700">Realtime Feed</h3>
           <div className="space-y-2 overflow-hidden">
             <AnimatePresence mode="popLayout">
               {events.map((ev, i) => (
@@ -233,7 +271,7 @@ export default function AdminDashboard() {
                   animate={{ opacity: 1 - i * 0.1, x: 0, height: "auto" }}
                   exit={{ opacity: 0, x: -30, height: 0 }}
                   transition={{ duration: 0.4 }}
-                  className="text-sm text-gray-700 bg-gray-50 rounded-xl px-4 py-2.5"
+                  className="rounded-xl bg-gray-50 px-4 py-2.5 text-sm text-gray-700"
                 >
                   {ev}
                 </motion.div>
@@ -248,23 +286,25 @@ export default function AdminDashboard() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.7 }}
-        className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+        className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
       >
-        <h3 className="text-sm font-semibold text-gray-700 mb-5">PMF判定パネル</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          {pmfMetrics.map((m) => {
-            const pct = Math.min(100, Math.round((m.current / m.target) * 100));
+        <h3 className="mb-5 text-sm font-semibold text-gray-700">PMF Panel</h3>
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {computedPmf.map((m) => {
+            const pct = Math.min(100, m.target > 0 ? Math.round((m.current / m.target) * 100) : 0);
             const passed = m.current >= m.target;
             const near = !passed && pct >= 80;
             return (
-              <div key={m.label} className="bg-gray-50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
+              <div key={m.label} className="rounded-xl bg-gray-50 p-4">
+                <div className="mb-2 flex items-center justify-between">
                   <span className="text-sm font-medium text-gray-700">{m.label}</span>
-                  <span className={`text-xs font-bold ${passed ? "text-emerald-600" : near ? "text-amber-500" : "text-[#E63946]"}`}>
-                    {passed ? "達成" : `${pct}%`}
+                  <span
+                    className={`text-xs font-bold ${passed ? "text-emerald-600" : near ? "text-amber-500" : "text-[#E63946]"}`}
+                  >
+                    {passed ? "Achieved" : `${pct}%`}
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                <div className="mb-2 h-2 w-full rounded-full bg-gray-200">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${pct}%` }}
@@ -273,20 +313,28 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <p className="text-xs text-gray-500">
-                  {m.unit === "¥" ? `¥${m.current.toLocaleString()}` : `${m.current.toLocaleString()}${m.unit}`}
+                  {m.unit === "Y"
+                    ? `Y${m.current.toLocaleString()}`
+                    : `${m.current.toLocaleString()}${m.unit}`}
                   {" / "}
-                  {m.unit === "¥" ? `¥${m.target.toLocaleString()}` : `${m.target.toLocaleString()}${m.unit}`}
+                  {m.unit === "Y"
+                    ? `Y${m.target.toLocaleString()}`
+                    : `${m.target.toLocaleString()}${m.unit}`}
                 </p>
               </div>
             );
           })}
         </div>
         <div
-          className={`text-center py-3 rounded-xl font-semibold text-sm transition-all duration-200 ${
-            pmfPassed >= 4 ? "bg-emerald-50 text-emerald-700" : pmfPassed >= 3 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-[#E63946]"
+          className={`rounded-xl py-3 text-center text-sm font-semibold transition-all duration-200 ${
+            pmfPassed >= 4
+              ? "bg-emerald-50 text-emerald-700"
+              : pmfPassed >= 3
+                ? "bg-amber-50 text-amber-700"
+                : "bg-red-50 text-[#E63946]"
           }`}
         >
-          Go/No-Go判定: {pmfPassed}/5達成 → {pmfPassed >= 4 ? "Go" : "要注意"}
+          Go/No-Go: {pmfPassed}/5 achieved {pmfPassed >= 4 ? "-> Go" : "-> Needs Attention"}
         </div>
       </motion.div>
     </div>
