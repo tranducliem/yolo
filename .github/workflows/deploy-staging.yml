@@ -6,35 +6,28 @@ on:
 
 jobs:
   deploy:
+    # Only run on tranducliem/yolo — NOT on ryo2gxo/yolo (Vercel handles that)
+    if: github.repository == 'tranducliem/yolo'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          command_timeout: 5m
-          script: |
-            set -e
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      - name: Trigger deploy webhook
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            https://yolo.gxo.co.jp/webhook/deploy \
+            -H 'Content-Type: application/json' \
+            -d "{\"token\":\"${{ secrets.DEPLOY_WEBHOOK_SECRET }}\"}")
 
-            cd /var/www/yolo
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -1)
 
-            echo "==> Pulling latest code..."
-            git pull origin develop
+          echo "Response: $BODY"
+          echo "HTTP Code: $HTTP_CODE"
 
-            echo "==> Installing dependencies..."
-            pnpm install --frozen-lockfile
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Deploy webhook failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
 
-            echo "==> Building..."
-            pnpm build
-
-            echo "==> Restarting app..."
-            pm2 restart yolo
-
-            echo "==> Deploy complete!"
-            pm2 status yolo
+          echo "Deploy triggered successfully!"
