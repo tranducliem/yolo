@@ -12,13 +12,14 @@ export default function AnalyticsAdminPage() {
   // SVG donut for share distribution
   const donutRadius = 70;
   const donutCircumference = 2 * Math.PI * donutRadius;
-  let donutOffset = 0;
-  const donutSegments = mockShareDistribution.map((s) => {
+  const donutSegments = mockShareDistribution.reduce<
+    (typeof mockShareDistribution[number] & { offset: number; length: number })[]
+  >((acc, s) => {
+    const offset = acc.reduce((sum, seg) => sum + seg.length, 0);
     const segmentLength = (s.value / 100) * donutCircumference;
-    const segment = { ...s, offset: donutOffset, length: segmentLength };
-    donutOffset += segmentLength;
-    return segment;
-  });
+    acc.push({ ...s, offset, length: segmentLength });
+    return acc;
+  }, []);
 
   // Viral effect cards with funnel data
   const viralEffects = [

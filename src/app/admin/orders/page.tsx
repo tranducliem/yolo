@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockOrders, type MockOrder } from "@/lib/mockData";
+import { mockOrders } from "@/lib/mockData";
+import type { MockOrder } from "@/types";
 
 const statusLabel: Record<MockOrder["status"], string> = {
   new: "新規",

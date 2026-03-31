@@ -1,4 +1,4 @@
-import AdminSideNav from "@/components/AdminSideNav";
+import AdminSideNav from "@/components/layout/AdminSideNav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (

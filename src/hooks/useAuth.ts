@@ -1,113 +1,124 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useMemo, useContext } from "react";
 import { useRouter } from "next/navigation";
-import type { CartItem } from "@/lib/mockData";
+import type { YoloUser } from "@/types";
+import { STORAGE_KEYS } from "@/config/storage-keys";
+import { useCart } from "./useCart";
+import { createClient } from "@/lib/supabase/client";
+import { AuthContext } from "./AuthProvider";
 
-const USER_KEY = "yolo_user";
-const TRY_KEY = "yolo_try_count";
-const CART_KEY = "yolo_cart";
-
-export interface YoloUser {
-  name: string;
-  petName: string;
-  loggedIn: boolean;
-  createdAt: string;
-  plan: "free" | "plus" | "pro" | "family";
-  ambassadorLevel: number;
-  ambassadorRegion?: string;
-  donationTotal: number;
-  donationCount: number; // animals saved
-}
+export type { YoloUser };
+export { AuthProvider } from "./AuthProvider";
 
 export function useAuth() {
-  const [user, setUser] = useState<YoloUser | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const supabase = useMemo(() => createClient(), []);
+  const { user, loaded, setUser } = useContext(AuthContext);
   const router = useRouter();
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(USER_KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {}
-    setLoaded(true);
-  }, []);
+  const { getCart, addToCart, updateCartQuantity, removeFromCart, clearCart, cartCount } =
+    useCart();
 
   const isLoggedIn = !!user?.loggedIn;
 
-  const login = useCallback((data: Partial<YoloUser>) => {
-    const u: YoloUser = {
-      name: data.name || "ユーザー",
-      petName: data.petName || "モカ",
-      loggedIn: true,
-      createdAt: data.createdAt || new Date().toISOString(),
-      plan: data.plan || "pro",
-      ambassadorLevel: data.ambassadorLevel ?? 3,
-      ambassadorRegion: data.ambassadorRegion || "福岡・犬",
-      donationTotal: data.donationTotal ?? 2340,
-      donationCount: data.donationCount ?? 47,
-    };
-    localStorage.setItem(USER_KEY, JSON.stringify(u));
-    setUser(u);
-  }, []);
+  const loginWithEmail = useCallback(
+    async (email: string, password: string) => {
+      return supabase.auth.signInWithPassword({ email, password });
+    },
+    [supabase],
+  );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(USER_KEY);
+  const loginWithOAuth = useCallback(
+    async (provider: "google" | "apple") => {
+      return supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: `${window.location.origin}/api/auth/callback` },
+      });
+    },
+    [supabase],
+  );
+
+  const signup = useCallback(
+    async (email: string, password: string, metadata: Record<string, string>) => {
+      return supabase.auth.signUp({ email, password, options: { data: metadata } });
+    },
+    [supabase],
+  );
+
+  const login = useCallback(
+    (data: Partial<YoloUser>) => {
+      const u: YoloUser = {
+        id: "mock-" + Date.now(),
+        authId: "mock",
+        email: "mock@yolo.jp",
+        displayName: data.name || data.displayName || "ユーザー",
+        avatarUrl: data.avatarUrl || null,
+        plan: data.plan || "pro",
+        ambassadorLevel: data.ambassadorLevel ?? 3,
+        ambassadorRegion: data.ambassadorRegion || "福岡・犬",
+        ambassadorCategory: null,
+        pawPoints: 0,
+        bestshotCountThisMonth: 0,
+        donationTotal: data.donationTotal ?? 2340,
+        referralCode: null,
+        referralCount: 0,
+        battleVotesToday: 0,
+        isBanned: false,
+        isAdmin: false,
+        lastLoginAt: null,
+        createdAt: data.createdAt || new Date().toISOString(),
+        pets: [],
+        name: data.name || "ユーザー",
+        petName: data.petName || "モカ",
+        loggedIn: true,
+        donationCount: data.donationCount ?? 47,
+      };
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(u));
+      setUser(u);
+    },
+    [setUser],
+  );
+
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem(STORAGE_KEYS.USER);
     setUser(null);
     router.push("/");
-  }, [router]);
+  }, [supabase, router, setUser]);
 
   const requireAuth = useCallback(() => {
-    if (loaded && !user?.loggedIn) {
+    if (loaded && !isLoggedIn) {
       sessionStorage.setItem("authRedirect", window.location.pathname);
       router.replace("/signup");
     }
-  }, [loaded, user, router]);
+  }, [loaded, isLoggedIn, router]);
 
-  const getTryCount = useCallback(() => parseInt(localStorage.getItem(TRY_KEY) || "0", 10), []);
+  const getTryCount = useCallback(
+    () => parseInt(localStorage.getItem(STORAGE_KEYS.TRY_COUNT) || "0", 10),
+    [],
+  );
+
   const incrementTry = useCallback(() => {
-    const c = parseInt(localStorage.getItem(TRY_KEY) || "0", 10);
-    localStorage.setItem(TRY_KEY, String(c + 1));
-  }, []);
-
-  // Cart
-  const getCart = useCallback((): CartItem[] => {
-    try { return JSON.parse(localStorage.getItem(CART_KEY) || "[]"); } catch { return []; }
-  }, []);
-
-  const addToCart = useCallback((item: Omit<CartItem, "id">) => {
-    const cart = JSON.parse(localStorage.getItem(CART_KEY) || "[]") as CartItem[];
-    const existing = cart.find((c) => c.goodsId === item.goodsId && c.variant === item.variant);
-    if (existing) {
-      existing.quantity += item.quantity;
-    } else {
-      cart.push({ ...item, id: `cart-${Date.now()}` });
-    }
-    localStorage.setItem(CART_KEY, JSON.stringify(cart));
-  }, []);
-
-  const updateCartQuantity = useCallback((id: string, quantity: number) => {
-    const cart = JSON.parse(localStorage.getItem(CART_KEY) || "[]") as CartItem[];
-    const item = cart.find((c) => c.id === id);
-    if (item) { item.quantity = Math.max(1, quantity); }
-    localStorage.setItem(CART_KEY, JSON.stringify(cart));
-  }, []);
-
-  const removeFromCart = useCallback((id: string) => {
-    const cart = (JSON.parse(localStorage.getItem(CART_KEY) || "[]") as CartItem[]).filter((c) => c.id !== id);
-    localStorage.setItem(CART_KEY, JSON.stringify(cart));
-  }, []);
-
-  const clearCart = useCallback(() => { localStorage.removeItem(CART_KEY); }, []);
-
-  const cartCount = useCallback(() => {
-    const cart = JSON.parse(localStorage.getItem(CART_KEY) || "[]") as CartItem[];
-    return cart.reduce((sum, c) => sum + c.quantity, 0);
+    const c = parseInt(localStorage.getItem(STORAGE_KEYS.TRY_COUNT) || "0", 10);
+    localStorage.setItem(STORAGE_KEYS.TRY_COUNT, String(c + 1));
   }, []);
 
   return {
-    user, isLoggedIn, loaded, login, logout, requireAuth,
-    getTryCount, incrementTry,
-    getCart, addToCart, updateCartQuantity, removeFromCart, clearCart, cartCount,
+    user,
+    isLoggedIn,
+    loaded,
+    login,
+    loginWithEmail,
+    loginWithOAuth,
+    signup,
+    logout,
+    requireAuth,
+    getTryCount,
+    incrementTry,
+    getCart,
+    addToCart,
+    updateCartQuantity,
+    removeFromCart,
+    clearCart,
+    cartCount,
   };
 }

@@ -1,0 +1,38 @@
+* text=auto eol=lf
+
+# Source
+*.ts diff=typescript
+*.tsx diff=typescript
+*.js diff=javascript
+*.jsx diff=javascript
+*.css diff=css
+*.html diff=html
+*.md diff=markdown
+*.json linguist-language=JSON
+
+# Lock files — treat as binary, no diff noise
+pnpm-lock.yaml binary
+package-lock.json binary
+yarn.lock binary
+
+# Images
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.webp binary
+
+# Fonts
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+
+# Archive export ignore
+/.github export-ignore
+/.vscode export-ignore
+/.idea export-ignore
+CLAUDE.md export-ignore
+AGENTS.md export-ignore
