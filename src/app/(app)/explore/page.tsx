@@ -93,8 +93,8 @@ export default function ExplorePage() {
 
   // Debounced search
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
     if (!search) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
       fetchFeed(cat);
       return;
     }

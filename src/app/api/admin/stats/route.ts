@@ -1,30 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { requireAdmin, AdminError } from "@/lib/admin";
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user: authUser },
-    } = await supabase.auth.getUser();
+    await requireAdmin();
 
-    if (!authUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Check admin
-    const { data: profile } = await supabaseAdmin
-      .from("users")
-      .select("id, is_admin")
-      .eq("auth_id", authUser.id)
-      .single();
-
-    if (!profile?.is_admin) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    // Gather KPIs
     const [
       { count: totalUsers },
       { count: paidUsers },
@@ -40,17 +21,13 @@ export async function GET() {
       supabaseAdmin.from("orders").select("id", { count: "exact", head: true }),
     ]);
 
-    // Total donation
     const { data: donationData } = await supabaseAdmin.from("npos").select("total_donated");
-
     const totalDonation = (donationData || []).reduce((s, n) => s + n.total_donated, 0);
 
-    // Total revenue (orders)
     const { data: revenueData } = await supabaseAdmin
       .from("orders")
       .select("total")
       .eq("status", "processing");
-
     const totalRevenue = (revenueData || []).reduce((s, o) => s + o.total, 0);
 
     return NextResponse.json({
@@ -63,6 +40,9 @@ export async function GET() {
       totalRevenue,
     });
   } catch (error) {
+    if (error instanceof AdminError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[admin/stats] Error:", error);
     return NextResponse.json({ error: "Failed to get stats" }, { status: 500 });
   }
