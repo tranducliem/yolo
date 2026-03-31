@@ -13,11 +13,14 @@ export const metadata: Metadata = {
   title: "YOLO - ずっと、ともに。",
   description:
     "YOLOは、AIがあなたのペットのベストショットを見つけるアプリ。この子との一度きりの時間を、最高の1枚に。",
+  other: {
+    google: "notranslate",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja" className={`${noto.variable} h-full antialiased`}>
+    <html lang="ja" translate="no" className={`${noto.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-white font-sans">
         <Providers>{children}</Providers>
       </body>
