@@ -1,8 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "_comment": "NOT deploying on Vercel. Cron schedules below are reference for Linux crontab setup.",
   "crons": [
     {
       "path": "/api/cron/donation-monthly",
-      "schedule": "0 0 1 * *"
+      "schedule": "0 0 1 * *",
+      "_note": "Linux: 0 0 1 * * curl -H 'Authorization: Bearer $CRON_SECRET' -X POST http://localhost:3000/api/cron/donation-monthly"
+    },
+    {
+      "path": "/api/cron/crown-daily",
+      "schedule": "0 15 * * *",
+      "_note": "Linux: 0 15 * * * curl -H 'Authorization: Bearer $CRON_SECRET' -X POST http://localhost:3000/api/cron/crown-daily"
     }
   ]
 }

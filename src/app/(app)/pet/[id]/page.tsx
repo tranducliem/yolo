@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { mockPets } from "@/lib/mockData";
@@ -18,6 +18,15 @@ export default function PetDetailPage() {
   const [following, setFollowing] = useState(false);
   const [authModal, setAuthModal] = useState<string | null>(null);
   const pet = mockPets.find((p) => p.id === id) || mockPets[0];
+
+  // Fetch real pet data (enhance mock with DB data when available)
+  useEffect(() => {
+    if (id) {
+      fetch(`/api/pets/${id}`)
+        .then((r) => r.json())
+        .catch(() => {});
+    }
+  }, [id]);
 
   const radar = [
     { label: "笑顔度", v: pet.smileScore / 5 },

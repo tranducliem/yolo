@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { mockPosts, exploreCategories } from "@/lib/mockData";
+import { mockPosts } from "@/lib/mockData";
+import { EXPLORE_CATEGORIES } from "@/config/explore";
 import { useAuth } from "@/hooks/useAuth";
 import EmotionButtons from "@/components/features/social/EmotionButtons";
 import DonationBadge from "@/components/features/donation/DonationBadge";
@@ -14,13 +14,52 @@ import FloatingCTA from "@/components/ui/FloatingCTA";
 
 type Mode = "grid" | "feed";
 
+interface FeedPost {
+  id: string;
+  photoUrl: string;
+  caption: string;
+  tags: string[];
+  isDonationTagged: boolean;
+  isBoosted: boolean;
+  likesCount: number;
+  commentsCount: number;
+  sharesCount: number;
+  emotions: { happy: number; funny: number; touched: number; crying: number };
+  petName: string | null;
+  ownerName: string;
+  ownerAvatarUrl: string | null;
+  ambassadorLevel: number;
+  createdAt: string;
+}
+
+// Map FeedPost to mock-compatible shape for existing UI
+function toDisplayPost(p: FeedPost) {
+  return {
+    id: p.id,
+    imageUrl: p.photoUrl,
+    petName: p.petName || "ペット",
+    ownerName: p.ownerName,
+    caption: p.caption,
+    tags: p.tags,
+    likes: p.likesCount,
+    comments: p.commentsCount,
+    shares: p.sharesCount,
+    emotions: p.emotions,
+    isDonationTag: p.isDonationTagged,
+    isBoosted: p.isBoosted,
+    ambassadorLevel: p.ambassadorLevel,
+    createdAt: new Date(p.createdAt).toLocaleDateString("ja-JP"),
+    donationAmount: p.isDonationTagged ? 10 : 0,
+  };
+}
+
 export default function ExplorePage() {
-  const router = useRouter();
   const { isLoggedIn } = useAuth();
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("recommend");
   const [mode, setMode] = useState<Mode>("grid");
-  const [modal, setModal] = useState<(typeof mockPosts)[0] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [modal, setModal] = useState<any>(null);
   const [fi, setFi] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(() => {
     if (typeof window !== "undefined")
@@ -29,9 +68,42 @@ export default function ExplorePage() {
   });
   const [authTrigger, setAuthTrigger] = useState<string | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
+  const [apiPosts, setApiPosts] = useState<ReturnType<typeof toDisplayPost>[]>([]);
 
-  // Filter posts by donation category
-  const posts = cat === "donation" ? mockPosts.filter((p) => p.isDonationTag) : mockPosts;
+  const fetchFeed = useCallback(async (category: string, searchQuery?: string) => {
+    try {
+      const params = new URLSearchParams({ category, limit: "40" });
+      if (searchQuery) params.set("search", searchQuery);
+      const res = await fetch(`/api/posts/feed?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.posts?.length > 0) {
+          setApiPosts(data.posts.map(toDisplayPost));
+        }
+      }
+    } catch {
+      /* fallback to mock */
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
+    fetchFeed(cat, search || undefined);
+  }, [cat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced search
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching feed data from API
+    if (!search) {
+      fetchFeed(cat);
+      return;
+    }
+    const timer = setTimeout(() => fetchFeed(cat, search), 500);
+    return () => clearTimeout(timer);
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Use API posts if available, otherwise mock
+  const posts = apiPosts.length > 0 ? apiPosts : mockPosts;
 
   const dismissBanner = () => {
     setBannerDismissed(true);
@@ -72,7 +144,7 @@ export default function ExplorePage() {
 
         {/* Categories - sticky horizontal scroll (includes donation challenge) */}
         <div className="hide-scrollbar sticky top-14 z-30 -mx-4 mb-3 flex gap-2 overflow-x-auto bg-gray-50 px-4 pb-2">
-          {exploreCategories.map((c) => (
+          {EXPLORE_CATEGORIES.map((c) => (
             <button
               key={c.id}
               onClick={() => setCat(c.id)}
@@ -391,7 +463,7 @@ export default function ExplorePage() {
                   </div>
                   <p className="mb-3 text-base text-[#4B5563]">{modal.caption}</p>
                   <div className="mb-3 flex flex-wrap gap-1.5">
-                    {modal.tags.map((t) => (
+                    {modal.tags.map((t: string) => (
                       <span
                         key={t}
                         className={`text-xs font-medium ${

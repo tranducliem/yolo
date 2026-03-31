@@ -25,7 +25,7 @@ export default function PostPage() {
 
 function PostInner() {
   const router = useRouter();
-  useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const [photo, setPhoto] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
@@ -35,40 +35,66 @@ function PostInner() {
   const [src, setSrc] = useState<"cam" | "best">("best");
   const [posting, setPosting] = useState(false);
 
-  // Track if any donation tag is selected
   const hasDonationTag = tags.some((t) => donationTags.includes(t));
 
-  // Confetti particles
   const [particles, setParticles] = useState<
     { id: number; x: number; y: number; color: string; delay: number; rotate: number }[]
   >([]);
 
-  const handlePost = () => {
+  const handlePost = async () => {
     if (!photo || posting) return;
     setPosting(true);
-    setConfetti(true);
 
-    // Generate confetti particles
-    const colors = ["#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#264653", "#FF6B6B", "#4ECDC4"];
-    const newParticles = Array.from({ length: 30 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100 - 50,
-      y: -(Math.random() * 200 + 100),
-      color: colors[i % colors.length],
-      delay: Math.random() * 0.5,
-      rotate: Math.random() * 720,
-    }));
-    setParticles(newParticles);
+    try {
+      const res = await fetch("/api/posts/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          petId: user?.pets?.[0]?.id || null,
+          photoUrl: photo,
+          caption,
+          tags,
+          visibility,
+          isDonationTagged: hasDonationTag,
+        }),
+      });
 
-    if (hasDonationTag) {
-      toast.show("🎉 +10🐾！ 🌟 保護施設に¥10届きました！");
-    } else {
-      toast.show("🎉 +10🐾 獲得！");
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.show(data.error || "投稿に失敗しました");
+        setPosting(false);
+        return;
+      }
+
+      // Show confetti
+      setConfetti(true);
+      const colors = ["#2A9D8F", "#E9C46A", "#F4A261", "#E76F51", "#264653", "#FF6B6B", "#4ECDC4"];
+      setParticles(
+        Array.from({ length: 30 }, (_, i) => ({
+          id: i,
+          x: Math.random() * 100 - 50,
+          y: -(Math.random() * 200 + 100),
+          color: colors[i % colors.length],
+          delay: Math.random() * 0.5,
+          rotate: Math.random() * 720,
+        })),
+      );
+
+      const pawPoints = data.pawPointsEarned || 10;
+      if (hasDonationTag) {
+        toast.show(`🎉 +${pawPoints}🐾！ 🌟 保護施設に寄付されました！`);
+      } else {
+        toast.show(`🎉 +${pawPoints}🐾 獲得！`);
+      }
+
+      setTimeout(() => {
+        router.push("/home");
+      }, 2500);
+    } catch {
+      toast.show("ネットワークエラーが発生しました");
+      setPosting(false);
     }
-
-    setTimeout(() => {
-      router.push("/home");
-    }, 2500);
   };
 
   const toggleTag = (tag: string) => {
@@ -80,7 +106,6 @@ function PostInner() {
   return (
     <>
       <div className="mx-auto max-w-lg px-4 pt-6 md:max-w-4xl">
-        {/* Page title */}
         <motion.h1
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -118,7 +143,7 @@ function PostInner() {
           </button>
         </motion.div>
 
-        {/* Photo grid (9 photos) */}
+        {/* Photo grid */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -205,7 +230,6 @@ function PostInner() {
             rows={3}
             className="focus:ring-accent/50 w-full resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm transition-all duration-200 hover:border-gray-300 focus:ring-2 focus:outline-none"
           />
-          {/* Character count bar */}
           <div className="mt-1 h-1 overflow-hidden rounded-full bg-gray-100">
             <motion.div
               className={`h-full rounded-full ${
@@ -216,7 +240,7 @@ function PostInner() {
           </div>
         </motion.div>
 
-        {/* Tags - horizontal scroll: normal tags + donation tags */}
+        {/* Tags */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -225,7 +249,6 @@ function PostInner() {
         >
           <p className="mb-2 text-sm font-medium text-gray-600">タグ</p>
           <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-1">
-            {/* Normal tags */}
             {availableTags.map((t) => (
               <motion.button
                 key={t}
@@ -240,7 +263,6 @@ function PostInner() {
                 {t}
               </motion.button>
             ))}
-            {/* Donation tags - green bg + star */}
             {donationTags.map((t) => (
               <motion.button
                 key={t}
@@ -258,7 +280,7 @@ function PostInner() {
           </div>
         </motion.div>
 
-        {/* Donation tag selected banner */}
+        {/* Donation tag banner */}
         <AnimatePresence>
           {hasDonationTag && (
             <motion.div
@@ -307,7 +329,7 @@ function PostInner() {
           </div>
         </motion.div>
 
-        {/* Donation point hint */}
+        {/* Donation hint */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -315,7 +337,7 @@ function PostInner() {
           className="mb-6 rounded-xl border border-emerald-100 bg-emerald-50 p-3"
         >
           <p className="text-center text-xs font-medium text-emerald-700">
-            🌟 寄付タグで投稿すると寄付貢献ポイント+10
+            🌟 寄付タグで投稿すると寄付貢献ポイント+20
           </p>
         </motion.div>
 
@@ -342,7 +364,7 @@ function PostInner() {
           )}
         </motion.button>
 
-        {/* Confetti animation overlay */}
+        {/* Confetti overlay */}
         <AnimatePresence>
           {confetti && (
             <motion.div
@@ -351,17 +373,10 @@ function PostInner() {
               exit={{ opacity: 0 }}
               className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
             >
-              {/* Confetti particles */}
               {particles.map((p) => (
                 <motion.div
                   key={p.id}
-                  initial={{
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    scale: 1,
-                    rotate: 0,
-                  }}
+                  initial={{ opacity: 1, x: 0, y: 0, scale: 1, rotate: 0 }}
                   animate={{
                     opacity: [1, 1, 0],
                     x: p.x * 3,
@@ -369,21 +384,12 @@ function PostInner() {
                     scale: [1, 1.2, 0.5],
                     rotate: p.rotate,
                   }}
-                  transition={{
-                    duration: 2,
-                    delay: p.delay,
-                    ease: "easeOut",
-                  }}
+                  transition={{ duration: 2, delay: p.delay, ease: "easeOut" }}
                   className="absolute h-3 w-3 rounded-sm"
-                  style={{
-                    backgroundColor: p.color,
-                    left: "50%",
-                    top: "50%",
-                  }}
+                  style={{ backgroundColor: p.color, left: "50%", top: "50%" }}
                 />
               ))}
 
-              {/* Success card */}
               <motion.div
                 initial={{ scale: 0, rotate: -10 }}
                 animate={{ scale: 1, rotate: 0 }}
@@ -404,7 +410,7 @@ function PostInner() {
                   transition={{ delay: 0.5 }}
                   className="text-accent text-lg font-bold"
                 >
-                  +10🐾 獲得！
+                  +{hasDonationTag ? 20 : 10}🐾 獲得！
                 </motion.p>
                 {hasDonationTag && (
                   <motion.div
@@ -413,16 +419,8 @@ function PostInner() {
                     transition={{ delay: 0.8 }}
                   >
                     <p className="mt-2 text-sm font-medium text-emerald-600">
-                      🌟 保護施設に¥10届きました！
+                      🌟 保護施設に寄付されました！
                     </p>
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 1.2, type: "spring" }}
-                      className="mt-3 inline-block rounded-full bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-700"
-                    >
-                      🌟 寄付貢献ポイント +10
-                    </motion.div>
                   </motion.div>
                 )}
               </motion.div>
