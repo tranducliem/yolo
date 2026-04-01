@@ -29,7 +29,7 @@ export default function SubscriptionAdminPage() {
   const [couponPlan, setCouponPlan] = useState("plus");
   const [couponLimit, setCouponLimit] = useState("100");
   const [stats, setStats] = useState<SubStats | null>(null);
-  const [, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -88,6 +88,19 @@ export default function SubscriptionAdminPage() {
 
   // Paid plans only for donation link
   const paidPlans = PLANS.filter((p) => p.donationAmount > 0);
+
+  if (loading) {
+    return (
+      <div className="p-4 md:p-8">
+        <h1 className="mb-6 text-3xl font-bold text-[#0D1B2A]">💎 サブスク管理</h1>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-24 animate-pulse rounded-2xl bg-gray-200" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-8">
