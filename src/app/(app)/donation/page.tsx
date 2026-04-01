@@ -52,9 +52,9 @@ interface NpoEntry {
 /* ── Pie Chart (CSS only) ── */
 function DonationPieChart() {
   const segments = [
-    { label: "食事", pct: 60, color: "#2A9D8F" },
-    { label: "医療", pct: 30, color: "#D4A843" },
-    { label: "施設", pct: 10, color: "#0D1B2A" },
+    { label: "会員費", pct: 60, color: "#2A9D8F" },
+    { label: "グッズ", pct: 30, color: "#D4A843" },
+    { label: "追加寄付", pct: 10, color: "#0D1B2A" },
   ];
   const stops = segments.reduce<string[]>((result, s, i) => {
     const start = segments.slice(0, i).reduce((sum, seg) => sum + seg.pct, 0);

@@ -125,6 +125,7 @@ export default function LP() {
     bestshots: 0,
     totalDonations: 0,
     animalsHelped: 0,
+    npos: 0,
   });
 
   // Logged-in users -> redirect to /home
@@ -526,23 +527,23 @@ export default function LP() {
             <div className="mb-10 rounded-3xl border border-emerald-100 bg-white p-8 text-center shadow-lg md:p-10">
               <p className="mb-2 text-sm text-[#9CA3AF]">これまでに届けた食事</p>
               <div className="text-accent mb-2 text-4xl font-bold tabular-nums md:text-5xl">
-                <Counter end={12847} suffix="匹" />
+                <Counter end={stats.animalsHelped} suffix="匹" />
               </div>
               <p className="text-sm text-[#9CA3AF]">の食事を届けました</p>
               <div className="mt-6 flex justify-center gap-6 text-sm text-[#4B5563]">
                 <div className="text-center">
-                  <p className="text-accent text-3xl font-bold tabular-nums">3</p>
+                  <Counter end={stats.npos || 3} />
                   <p className="text-xs text-[#9CA3AF]">支援先NPO</p>
                 </div>
                 <div className="w-px bg-gray-200" />
                 <div className="text-center">
-                  <p className="text-accent text-3xl font-bold tabular-nums">47</p>
-                  <p className="text-xs text-[#9CA3AF]">都道府県</p>
+                  <Counter end={stats.users || 0} suffix="+" />
+                  <p className="text-xs text-[#9CA3AF]">ユーザー</p>
                 </div>
                 <div className="w-px bg-gray-200" />
                 <div className="text-center">
-                  <p className="text-accent text-3xl font-bold tabular-nums">12,000+</p>
-                  <p className="text-xs text-[#9CA3AF]">寄付者</p>
+                  <Counter end={stats.bestshots || 0} />
+                  <p className="text-xs text-[#9CA3AF]">ベストショット</p>
                 </div>
               </div>
             </div>

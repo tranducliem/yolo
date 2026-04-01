@@ -168,7 +168,7 @@ function AmbassadorContent() {
               const isLocked = rank.level > userLevel + 1;
 
               // Mock progress for next level
-              const progress = isNext ? 65 : 0;
+              const progress = isNext ? Math.min(95, userLevel * 20) : 0;
 
               return (
                 <motion.div

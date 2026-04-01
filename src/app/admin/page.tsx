@@ -14,20 +14,8 @@ interface AdminStats {
   totalRevenue: number;
 }
 
-const realtimeEvents = [
-  "New user registered",
-  "Crown selected for today",
-  "Battle started",
-  "New dare post submitted",
-  "PRO plan subscribed",
-  "Order shipped",
-  "New pet registered",
-  "Photo reached 100 likes",
-  "Song generated",
-  "Letter received",
-  "Donation tag post",
-  "Regional ambassador updated",
-];
+// Placeholder events — will be replaced with real activity feed when data grows
+const realtimeEvents = ["System ready", "Waiting for user activity..."];
 
 const pmfMetrics = [
   { label: "DL", current: 0, target: 30000, unit: "" },

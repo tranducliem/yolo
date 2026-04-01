@@ -6,13 +6,35 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import FullScreenMenu from "@/components/layout/FullScreenMenu";
 
+function NotificationBell() {
+  const router = useRouter();
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/notifications?limit=1")
+      .then((r) => (r.ok ? r.json() : { unreadCount: 0 }))
+      .then((d) => setUnread(d.unreadCount ?? 0))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <button onClick={() => router.push("/notifications")} className="relative">
+      <span className="text-xl">🔔</span>
+      {unread > 0 && (
+        <span className="bg-red absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white">
+          {unread > 9 ? "9+" : unread}
+        </span>
+      )}
+    </button>
+  );
+}
+
 interface HeaderProps {
   /** "marketing" = scroll-reveal fixed header (homepage hero), "app" = always-visible sticky header */
   variant?: "marketing" | "app";
 }
 
 export default function Header({ variant = "app" }: HeaderProps) {
-  const router = useRouter();
   const { isLoggedIn } = useAuth();
   const [show, setShow] = useState(variant === "app");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -53,12 +75,7 @@ export default function Header({ variant = "app" }: HeaderProps) {
           <div className="flex items-center gap-3">
             {isLoggedIn ? (
               <>
-                <button onClick={() => router.push("/notifications")} className="relative">
-                  <span className="text-xl">🔔</span>
-                  <span className="bg-red absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white">
-                    3
-                  </span>
-                </button>
+                <NotificationBell />
               </>
             ) : (
               <>

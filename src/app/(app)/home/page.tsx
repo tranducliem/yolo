@@ -81,7 +81,7 @@ export default function HomePage() {
   const [bestshot, setBestshot] = useState<Bestshot | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [emoCount, setEmoCount] = useState(12847);
+  const [emoCount, setEmoCount] = useState(0);
   const [authTrigger, setAuthTrigger] = useState<string | null>(null);
 
   // Countdown timer
@@ -112,10 +112,12 @@ export default function HomePage() {
     return () => clearInterval(iv);
   }, []);
 
-  // Emotion counter increment
+  // Load real user count from API
   useEffect(() => {
-    const iv = setInterval(() => setEmoCount((c) => c + 1 + Math.floor(Math.random() * 3)), 1000);
-    return () => clearInterval(iv);
+    fetch("/api/stats/public")
+      .then((r) => r.json())
+      .then((d) => setEmoCount(d.stats?.users ?? 0))
+      .catch(() => {});
   }, []);
 
   const cdStr = `${String(cd.h).padStart(2, "0")}:${String(cd.m).padStart(2, "0")}:${String(cd.s).padStart(2, "0")}`;
@@ -438,7 +440,7 @@ export default function HomePage() {
           viewport={{ once: true, margin: "-50px" }}
           className="mb-4 rounded-2xl bg-white p-5 py-6 text-center shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
         >
-          <p className="mb-1 text-sm text-[#9CA3AF]">YOLOは今日</p>
+          <p className="mb-1 text-sm text-[#9CA3AF]">YOLOコミュニティ</p>
           <motion.p
             key={emoCount}
             initial={{ scale: 1.05 }}
@@ -447,7 +449,7 @@ export default function HomePage() {
           >
             {emoCount.toLocaleString()}人
           </motion.p>
-          <p className="mt-1 text-sm text-[#9CA3AF]">を笑顔にしました</p>
+          <p className="mt-1 text-sm text-[#9CA3AF]">が参加しています</p>
         </motion.div>
 
         {/* ⑥ Recommended horizontal scroll */}

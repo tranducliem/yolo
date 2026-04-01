@@ -10,21 +10,39 @@ import PaywallModal from "@/components/features/auth/PaywallModal";
 interface Photo {
   file: File;
   preview: string;
+  /** Converted file (HEIC→JPEG) or original, available after async processing */
+  processed: File | null;
 }
 
-function testImage(file: File): Promise<Photo> {
-  const url = URL.createObjectURL(file);
-  return new Promise((res) => {
-    const img = new Image();
-    img.onload = () => res({ file, preview: url });
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      res({ file, preview: "" });
-    };
-    img.src = url;
-  });
+/**
+ * Convert HEIC to JPEG using heic2any (dynamic import to avoid SSR issues).
+ * Returns original file if not HEIC or conversion fails.
+ */
+async function convertIfHeic(file: File): Promise<File> {
+  const isHeic =
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    file.name.toLowerCase().endsWith(".heic") ||
+    file.name.toLowerCase().endsWith(".heif");
+
+  if (!isHeic) return file;
+
+  try {
+    const heic2any = (await import("heic2any")).default;
+    const blob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+    const resultBlob = Array.isArray(blob) ? blob[0] : blob;
+    return new File([resultBlob], file.name.replace(/\.hei[cf]$/i, ".jpg"), {
+      type: "image/jpeg",
+    });
+  } catch (err) {
+    console.warn("HEIC conversion failed, using original:", err);
+    return file;
+  }
 }
 
+/**
+ * Resize image to maxSize using canvas. Returns base64 JPEG string.
+ */
 function resizeToBase64(file: File, maxSize: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -48,10 +66,10 @@ function resizeToBase64(file: File, maxSize: number): Promise<string> {
         canvas.getContext("2d")?.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", 0.85));
       };
-      img.onerror = reject;
+      img.onerror = () => reject(new Error("Image decode failed"));
       img.src = e.target?.result as string;
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error("File read failed"));
     reader.readAsDataURL(file);
   });
 }
@@ -64,11 +82,11 @@ export default function TryPage() {
   const [dragging, setDragging] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [showBlock, setShowBlock] = useState(false);
   const [removingIndex, setRemovingIndex] = useState<number | null>(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [processing, setProcessing] = useState(0); // count of files still being processed
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -86,22 +104,59 @@ export default function TryPage() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Add files with INSTANT preview, then process HEIC conversion in background.
+   */
   const addFiles = useCallback(async (files: FileList) => {
-    setPreparing(true);
     setError("");
-    const items = await Promise.all(Array.from(files).map(testImage));
+    const fileArray = Array.from(files);
+
+    // Step 1: Create instant previews using URL.createObjectURL (no decoding needed)
+    const instantPhotos: Photo[] = fileArray.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      processed: null, // not yet processed
+    }));
+
+    // Step 2: Add to state IMMEDIATELY — user sees previews right away
     setPhotos((prev) => {
-      const c = [...prev, ...items];
-      if (c.length > 20) {
-        c.slice(20).forEach((p) => {
+      const combined = [...prev, ...instantPhotos];
+      if (combined.length > 20) {
+        combined.slice(20).forEach((p) => {
           if (p.preview) URL.revokeObjectURL(p.preview);
         });
         setError("最大20枚です");
-        return c.slice(0, 20);
+        return combined.slice(0, 20);
       }
-      return c;
+      return combined;
     });
-    setPreparing(false);
+
+    // Step 3: Process HEIC conversion in background (async, non-blocking)
+    setProcessing((c) => c + fileArray.length);
+
+    for (const file of fileArray) {
+      convertIfHeic(file)
+        .then((convertedFile) => {
+          setPhotos((prev) =>
+            prev.map((p) => {
+              if (p.file === file) {
+                // Update preview if conversion created a new file (HEIC→JPEG)
+                const newPreview =
+                  convertedFile !== file ? URL.createObjectURL(convertedFile) : p.preview;
+                return { ...p, processed: convertedFile, preview: newPreview };
+              }
+              return p;
+            }),
+          );
+        })
+        .catch(() => {
+          // Keep original file as fallback
+          setPhotos((prev) => prev.map((p) => (p.file === file ? { ...p, processed: file } : p)));
+        })
+        .finally(() => {
+          setProcessing((c) => Math.max(0, c - 1));
+        });
+    }
   }, []);
 
   const remove = (i: number) => {
@@ -122,22 +177,26 @@ export default function TryPage() {
     }
     if (photos.length < 1) return;
     setSubmitting(true);
+    setError("");
 
     try {
-      // API送信用（1024px）
-      const apiPhotos = await Promise.all(
-        photos.map(async (p) => {
-          const full = await resizeToBase64(p.file, 1024);
-          return {
-            name: p.file.name,
-            base64: full.split(",")[1], // data:image/jpeg;base64, を除去
-            type: "image/jpeg",
-          };
-        }),
-      );
+      // Use processed files (HEIC already converted), fallback to original
+      const filesToProcess = photos.map((p) => p.processed ?? p.file);
 
-      // プレビュー用（600px。/resultsで写真を表示するため）
-      const previews = await Promise.all(photos.map((p) => resizeToBase64(p.file, 600)));
+      // Resize for API (1024px) and preview (600px) in parallel
+      const [apiPhotos, previews] = await Promise.all([
+        Promise.all(
+          filesToProcess.map(async (file, i) => {
+            const full = await resizeToBase64(file, 1024);
+            return {
+              name: photos[i].file.name,
+              base64: full.split(",")[1],
+              type: "image/jpeg",
+            };
+          }),
+        ),
+        Promise.all(filesToProcess.map((file) => resizeToBase64(file, 600))),
+      ]);
 
       sessionStorage.setItem("yolo_pet_name", name.trim());
       sessionStorage.setItem("yolo_photos", JSON.stringify(apiPhotos));
@@ -146,13 +205,14 @@ export default function TryPage() {
       incrementTry();
       router.push("/analyzing");
     } catch (err) {
-      console.error(err);
-      setError("写真の処理中にエラーが発生しました。もう一度お試しください。");
+      console.error("Photo processing error:", err);
+      setError("写真の処理中にエラーが発生しました。JPEG/PNG形式の写真をお試しください。");
       setSubmitting(false);
     }
   };
 
-  const canSubmit = !submitting && !preparing && photos.length >= 1 && name.trim().length > 0;
+  const allProcessed = processing === 0;
+  const canSubmit = !submitting && allProcessed && photos.length >= 1 && name.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-white">
@@ -182,12 +242,7 @@ export default function TryPage() {
             <motion.div
               initial={{ scale: 0.8, y: 40, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
-              transition={{
-                delay: 0.15,
-                type: "spring",
-                stiffness: 200,
-                damping: 20,
-              }}
+              transition={{ delay: 0.15, type: "spring", stiffness: 200, damping: 20 }}
             >
               <motion.div
                 animate={{ rotate: [0, -10, 10, -5, 5, 0] }}
@@ -258,9 +313,7 @@ export default function TryPage() {
             写真をアップロード（1〜20枚）
           </label>
           <motion.div
-            animate={{
-              scale: dragging ? 1.03 : 1,
-            }}
+            animate={{ scale: dragging ? 1.03 : 1 }}
             transition={{ type: "spring", stiffness: 300, damping: 20 }}
             onDragOver={(e) => {
               e.preventDefault();
@@ -299,22 +352,20 @@ export default function TryPage() {
             <AnimatePresence mode="wait">
               {dragging ? (
                 <motion.p
-                  key="drop-text"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
+                  key="drop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                   className="text-accent font-bold"
                 >
                   ここにドロップ！
                 </motion.p>
               ) : (
                 <motion.div
-                  key="default-text"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
+                  key="default"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                 >
                   <p className="font-medium text-gray-600">ドラッグ&ドロップ or タップで選択</p>
                   <p className="mt-1 text-sm text-gray-400">JPG, PNG, HEIC対応 / 1〜20枚</p>
@@ -324,7 +375,7 @@ export default function TryPage() {
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/heic,.heic"
+              accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
               multiple
               onChange={(e) => {
                 if (e.target.files?.length) addFiles(e.target.files);
@@ -335,16 +386,16 @@ export default function TryPage() {
           </motion.div>
         </motion.div>
 
-        {/* Preparing indicator */}
+        {/* Processing indicator */}
         <AnimatePresence>
-          {preparing && (
+          {processing > 0 && (
             <motion.p
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               className="text-accent mb-4 animate-pulse text-center text-sm"
             >
-              写真を準備しています...
+              写真を最適化中... ({processing}枚残り)
             </motion.p>
           )}
         </AnimatePresence>
@@ -359,7 +410,6 @@ export default function TryPage() {
               transition={{ duration: 0.3 }}
               className="mb-6"
             >
-              {/* Count pill */}
               <div className="mb-3 flex items-center gap-2">
                 <motion.span
                   key={photos.length}
@@ -373,7 +423,6 @@ export default function TryPage() {
                 <span className="text-xs text-gray-400">（✕ボタンで削除）</span>
               </div>
 
-              {/* Photo grid */}
               <div className="grid grid-cols-4 gap-2">
                 {photos.map((p, i) => (
                   <motion.div
@@ -383,12 +432,7 @@ export default function TryPage() {
                       scale: removingIndex === i ? 0 : 1,
                       opacity: removingIndex === i ? 0 : 1,
                     }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 25,
-                      mass: 0.8,
-                    }}
+                    transition={{ type: "spring", stiffness: 500, damping: 25, mass: 0.8 }}
                     className="group relative aspect-square overflow-hidden rounded-lg"
                   >
                     {p.preview ? (
@@ -399,7 +443,11 @@ export default function TryPage() {
                         <span className="text-2xl">📷</span>
                       </div>
                     )}
-                    {/* Delete button */}
+                    {!p.processed && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/50 border-t-white" />
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -461,11 +509,7 @@ export default function TryPage() {
             <>
               <motion.span
                 animate={{ rotate: 360 }}
-                transition={{
-                  repeat: Infinity,
-                  duration: 0.8,
-                  ease: "linear",
-                }}
+                transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
                 className="inline-block h-5 w-5 rounded-full border-2 border-white/30 border-t-white"
               />
               写真を準備中...

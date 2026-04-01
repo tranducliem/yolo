@@ -1,44 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { PLANS } from "@/config/plans";
 
-const planDist = [
-  { name: "Free", pct: 68, color: "#9CA3AF" },
-  { name: "YOLO+", pct: 18, color: "#3B82F6" },
-  { name: "PRO", pct: 10, color: "#8B5CF6" },
-  { name: "FAMILY", pct: 4, color: "#D4A843" },
-];
+const planColors: Record<string, string> = {
+  free: "#9CA3AF",
+  plus: "#3B82F6",
+  pro: "#8B5CF6",
+  family: "#D4A843",
+};
 
-const churnReasons = [
-  { reason: "価格が高い", pct: 35 },
-  { reason: "使わなくなった", pct: 25 },
-  { reason: "機能不足", pct: 20 },
-  { reason: "他サービス", pct: 12 },
-  { reason: "その他", pct: 8 },
-];
+const planLabels: Record<string, string> = {
+  free: "Free",
+  plus: "YOLO+",
+  pro: "PRO",
+  family: "FAMILY",
+};
 
-const monthlySubData = [
-  { month: "10月", newSub: 1200, churn: 280 },
-  { month: "11月", newSub: 1450, churn: 310 },
-  { month: "12月", newSub: 1800, churn: 250 },
-  { month: "1月", newSub: 2100, churn: 340 },
-  { month: "2月", newSub: 2400, churn: 290 },
-  { month: "3月", newSub: 2800, churn: 320 },
-];
+interface SubStats {
+  totalPaid: number;
+  planDistribution: Record<string, number>;
+}
 
 export default function SubscriptionAdminPage() {
   const [couponDiscount, setCouponDiscount] = useState("20");
   const [couponPeriod, setCouponPeriod] = useState("30");
   const [couponPlan, setCouponPlan] = useState("plus");
   const [couponLimit, setCouponLimit] = useState("100");
+  const [stats, setStats] = useState<SubStats | null>(null);
+  const [, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/subscriptions");
+      if (res.ok) {
+        const data = await res.json();
+        const subs = data.subscriptions ?? [];
+        const dist: Record<string, number> = { free: 0, plus: 0, pro: 0, family: 0 };
+        subs.forEach((s: { plan: string }) => {
+          if (dist[s.plan] !== undefined) dist[s.plan]++;
+        });
+        setStats({ totalPaid: subs.length, planDistribution: dist });
+      }
+    } catch {
+      // empty
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const totalPaid = stats?.totalPaid ?? 0;
+  const dist = stats?.planDistribution ?? { free: 0, plus: 0, pro: 0, family: 0 };
+  const totalSubs = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+  const planDist = Object.entries(dist).map(([plan, count]) => ({
+    name: planLabels[plan] ?? plan,
+    pct: Math.round((count / totalSubs) * 100),
+    color: planColors[plan] ?? "#9CA3AF",
+  }));
 
   const kpis = [
-    { icon: "💰", label: "MRR", value: "¥4,234,500" },
-    { icon: "💎", label: "有料会員", value: "15,234" },
-    { icon: "📉", label: "解約率", value: "2.8%" },
-    { icon: "🏆", label: "LTV", value: "¥45,600" },
+    { icon: "💰", label: "MRR", value: `¥${(totalPaid * 480).toLocaleString()}` },
+    { icon: "💎", label: "有料会員", value: totalPaid.toLocaleString() },
+    { icon: "📉", label: "解約率", value: totalPaid > 0 ? "—" : "0%" },
+    { icon: "🏆", label: "LTV", value: totalPaid > 0 ? "—" : "¥0" },
   ];
 
   // SVG donut chart calculations
@@ -53,7 +82,9 @@ export default function SubscriptionAdminPage() {
     return acc;
   }, []);
 
-  const maxNewSub = Math.max(...monthlySubData.map((d) => d.newSub));
+  const churnReasons = [{ reason: "データ収集中", pct: 100 }];
+  const monthlySubData: { month: string; newSub: number; churn: number }[] = [];
+  const maxNewSub = Math.max(1, ...monthlySubData.map((d) => d.newSub));
 
   // Paid plans only for donation link
   const paidPlans = PLANS.filter((p) => p.donationAmount > 0);
@@ -107,7 +138,7 @@ export default function SubscriptionAdminPage() {
                 />
               ))}
               <text x="90" y="85" textAnchor="middle" className="text-2xl font-bold" fill="#1F2937">
-                15,234
+                {totalPaid.toLocaleString()}
               </text>
               <text x="90" y="105" textAnchor="middle" className="text-xs" fill="#9CA3AF">
                 有料会員
