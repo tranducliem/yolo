@@ -35,16 +35,26 @@ function Counter({ end, suffix = "" }: { end: number; suffix?: string }) {
   );
 }
 
-// ── Fade in ──
+// ── Fade in (with iOS fallback) ──
 function FadeIn({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-50px" });
+  const [forceShow, setForceShow] = useState(false);
+
+  // Fallback: if IntersectionObserver doesn't fire within 1.5s, show content anyway
+  useEffect(() => {
+    const timer = setTimeout(() => setForceShow(true), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const shouldShow = inView || forceShow;
+
   return (
     <motion.div
       ref={ref}
       initial={{ opacity: 0, y: 30 }}
-      animate={inView ? { opacity: 1, y: 0 } : {}}
-      transition={{ duration: 0.6, delay }}
+      animate={shouldShow ? { opacity: 1, y: 0 } : {}}
+      transition={{ duration: 0.6, delay: forceShow ? 0 : delay }}
     >
       {children}
     </motion.div>

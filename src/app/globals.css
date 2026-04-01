@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --accent: #2A9D8F;
-  --accent-light: #3DB8A9;
-  --accent-dark: #228B7E;
-  --navy: #0D1B2A;
-  --gold: #D4A843;
-  --red: #E63946;
+  --accent: #2a9d8f;
+  --accent-light: #3db8a9;
+  --accent-dark: #228b7e;
+  --navy: #0d1b2a;
+  --gold: #d4a843;
+  --red: #e63946;
 }
 
 @theme inline {
@@ -21,31 +21,94 @@
 
 body {
   background: #fff;
-  color: #1F2937;
+  color: #1f2937;
 }
 
 @keyframes rainbow-rotate {
-  0% { border-color: #ff0000; }
-  14% { border-color: #ff8800; }
-  28% { border-color: #ffff00; }
-  42% { border-color: #00ff00; }
-  57% { border-color: #0088ff; }
-  71% { border-color: #8800ff; }
-  85% { border-color: #ff00ff; }
-  100% { border-color: #ff0000; }
+  0% {
+    border-color: #ff0000;
+  }
+  14% {
+    border-color: #ff8800;
+  }
+  28% {
+    border-color: #ffff00;
+  }
+  42% {
+    border-color: #00ff00;
+  }
+  57% {
+    border-color: #0088ff;
+  }
+  71% {
+    border-color: #8800ff;
+  }
+  85% {
+    border-color: #ff00ff;
+  }
+  100% {
+    border-color: #ff0000;
+  }
 }
-.rainbow-border { animation: rainbow-rotate 3s linear infinite; border-width: 4px; border-style: solid; }
+.rainbow-border {
+  animation: rainbow-rotate 3s linear infinite;
+  border-width: 4px;
+  border-style: solid;
+}
 
 @keyframes sparkle-pulse {
-  0%, 100% { box-shadow: 0 0 4px rgba(212, 168, 67, 0.3), 0 0 8px rgba(212, 168, 67, 0.1); }
-  50% { box-shadow: 0 0 8px rgba(212, 168, 67, 0.6), 0 0 16px rgba(212, 168, 67, 0.3); }
+  0%,
+  100% {
+    box-shadow:
+      0 0 4px rgba(212, 168, 67, 0.3),
+      0 0 8px rgba(212, 168, 67, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 8px rgba(212, 168, 67, 0.6),
+      0 0 16px rgba(212, 168, 67, 0.3);
+  }
 }
-.sparkle { animation: sparkle-pulse 2s ease-in-out infinite; }
+.sparkle {
+  animation: sparkle-pulse 2s ease-in-out infinite;
+}
 
-.hide-scrollbar::-webkit-scrollbar { display: none; }
-.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
 @keyframes confetti-fall {
-  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+  0% {
+    transform: translateY(-10vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/*
+ * iOS Safari fallback: ensure Framer Motion elements become visible
+ * even if IntersectionObserver/whileInView fails on older devices.
+ * Framer Motion sets inline style opacity:0, this CSS animation
+ * overrides it after 2s delay as a safety net.
+ */
+@keyframes force-visible {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  /* iOS only */
+  [style*="opacity: 0"],
+  [style*="opacity:0"] {
+    animation: force-visible 0.3s ease-out 2s forwards;
+  }
 }

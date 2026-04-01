@@ -385,7 +385,7 @@ export default function HomePage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-50px" }}
+          viewport={{ once: true, amount: 0.1 }}
           className="border-gold relative mb-4 cursor-pointer overflow-hidden rounded-2xl border-2 bg-gradient-to-br from-[#FFF8E1] to-[#FFFDE7] p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
           onClick={() => router.push("/ranking")}
         >
@@ -437,7 +437,7 @@ export default function HomePage() {
         <motion.div
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
-          viewport={{ once: true, margin: "-50px" }}
+          viewport={{ once: true, amount: 0.1 }}
           className="mb-4 rounded-2xl bg-white p-5 py-6 text-center shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
         >
           <p className="mb-1 text-sm text-[#9CA3AF]">YOLOコミュニティ</p>
@@ -457,7 +457,7 @@ export default function HomePage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-50px" }}
+            viewport={{ once: true, amount: 0.1 }}
             className="mb-4"
           >
             <div className="mb-3 flex items-center justify-between">
@@ -526,7 +526,7 @@ export default function HomePage() {
                 key={post.id}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
+                viewport={{ once: true, amount: 0.1 }}
                 transition={{ delay: idx * 0.05 }}
                 className={`overflow-hidden rounded-2xl bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${
                   post.isDonationTag ? "ring-1 ring-emerald-200" : ""
