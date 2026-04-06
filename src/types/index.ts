@@ -7,3 +7,4 @@ export type * from "./donation.types";
 export type * from "./ambassador.types";
 export type * from "./admin.types";
 export type * from "./config.types";
+export type * from "./art.types";

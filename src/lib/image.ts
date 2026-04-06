@@ -1,17 +1,71 @@
 import type { PhotoData } from "@/types";
 import { LIMITS } from "@/config/site";
 
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/heic", "image/webp"];
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "image/heif",
+  "image/webp",
+  "image/gif",
+];
+
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const heic2any = (await import("heic2any")).default;
+  const result = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+  const blob = Array.isArray(result) ? result[0] : result;
+  const newName = file.name.replace(/\.hei[cf]$/i, ".jpg");
+  return new File([blob], newName, { type: "image/jpeg" });
+}
+
+function isHeicByTypeOrExt(file: File): boolean {
+  const t = file.type.toLowerCase();
+  if (t === "image/heic" || t === "image/heif") return true;
+  return /\.hei[cf]$/i.test(file.name);
+}
+
+async function isHeicByBytes(file: File): Promise<boolean> {
+  try {
+    const buf = await file.slice(0, 12).arrayBuffer();
+    const view = new Uint8Array(buf);
+    if (view[4] === 0x66 && view[5] === 0x74 && view[6] === 0x79 && view[7] === 0x70) {
+      const brand = String.fromCharCode(view[8], view[9], view[10], view[11]);
+      return ["heic", "heix", "mif1", "hevc", "hevx", "heim", "heis"].includes(brand);
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+export async function ensureBrowserCompatible(file: File): Promise<File> {
+  const heic = isHeicByTypeOrExt(file) || (await isHeicByBytes(file));
+  if (heic) {
+    return convertHeicToJpeg(file);
+  }
+  return file;
+}
 
 /**
  * Validate ảnh upload (type + size)
  */
 export function validateImage(file: File): { valid: boolean; error?: string } {
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    return { valid: false, error: `${file.name}: Unsupported format. Use JPEG, PNG, HEIC, or WebP.` };
+  const type = file.type || "";
+  const ext = file.name.toLowerCase();
+  const isAllowedType = ALLOWED_TYPES.includes(type);
+  const isAllowedExt = /\.(jpe?g|png|heic|heif|webp|gif)$/i.test(ext);
+
+  if (!isAllowedType && !isAllowedExt) {
+    return {
+      valid: false,
+      error: `${file.name}: 対応していない形式です。JPEG, PNG, HEIC, GIF, WebP をご利用ください。`,
+    };
   }
   if (file.size > LIMITS.maxPhotoSizeMB * 1024 * 1024) {
-    return { valid: false, error: `${file.name}: File too large. Max ${LIMITS.maxPhotoSizeMB}MB.` };
+    return {
+      valid: false,
+      error: `${file.name}: ファイルサイズが大きすぎます。最大${LIMITS.maxPhotoSizeMB}MBです。`,
+    };
   }
   return { valid: true };
 }
@@ -37,7 +91,10 @@ export function resizeImage(file: File, maxWidth: number): Promise<string> {
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("Canvas not supported")); return; }
+      if (!ctx) {
+        reject(new Error("Canvas not supported"));
+        return;
+      }
 
       ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL("image/jpeg", 0.85));
