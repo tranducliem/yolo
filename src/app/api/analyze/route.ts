@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeWithClaude, analyzeWithClaudeAgentSDK, generateMockResults } from "@/lib/analyze";
+import {
+  analyzeWithClaude,
+  analyzeWithClaudeAgentSDK,
+  analyzeWithProxy,
+  generateMockResults,
+} from "@/lib/analyze";
 import { getAnalyzeProvider } from "@/lib/anthropic";
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -91,7 +96,16 @@ export async function POST(request: NextRequest) {
     let mode: "live" | "mock";
 
     // Run analysis
-    if (provider === "claude_code") {
+    if (provider === "proxy") {
+      try {
+        results = await analyzeWithProxy(photos, petName || "ペット");
+        mode = "live";
+      } catch (error) {
+        console.error("[analyze] Proxy error, falling back to mock:", error);
+        results = generateMockResults(photos.length, petName || "ペット");
+        mode = "mock";
+      }
+    } else if (provider === "claude_code") {
       try {
         results = await analyzeWithClaudeAgentSDK(photos, petName || "ペット");
         mode = "live";

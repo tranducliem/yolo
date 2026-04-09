@@ -62,7 +62,66 @@ export async function analyzeWithClaude(
 }
 
 /**
- * Method 2: Claude Agent SDK (uses CLAUDE_CODE_OAUTH_TOKEN)
+ * Method 2: Claude Proxy Server (recommended for production)
+ * Sends request to standalone proxy that manages token pool + rotation
+ */
+export async function analyzeWithProxy(
+  photos: PhotoData[],
+  petName: string,
+): Promise<AnalyzeResult[]> {
+  const proxyUrl = process.env.PROXY_URL;
+  const proxyApiKey = process.env.PROXY_API_KEY;
+
+  if (!proxyUrl) throw new Error("PROXY_URL not configured");
+  if (!proxyApiKey) throw new Error("PROXY_API_KEY not configured");
+
+  // Build content blocks (same format as direct API)
+  const contentBlocks: Record<string, unknown>[] = [];
+
+  photos.forEach((photo, index) => {
+    contentBlocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: photo.type || "image/jpeg",
+        data: photo.base64,
+      },
+    });
+    contentBlocks.push({
+      type: "text",
+      text: `Photo ${index + 1}`,
+    });
+  });
+
+  contentBlocks.push({
+    type: "text",
+    text: buildAnalysisPrompt(photos.length, petName),
+  });
+
+  const response = await fetch(`${proxyUrl}/v1/query`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${proxyApiKey}`,
+    },
+    body: JSON.stringify({
+      content: contentBlocks,
+      options: { maxTurns: 1 },
+      clientId: "yolo",
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(`Proxy error: ${data.error} — ${data.message}`);
+  }
+
+  return parseAnalysisResponse(data.result);
+}
+
+/**
+ * Method 3: Claude Agent SDK (uses CLAUDE_CODE_OAUTH_TOKEN)
  * Spawns Claude Code subprocess, works with Pro/Max subscription
  */
 export async function analyzeWithClaudeAgentSDK(
