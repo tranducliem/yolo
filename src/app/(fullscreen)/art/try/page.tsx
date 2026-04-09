@@ -7,7 +7,7 @@ import { ART_STYLES, STYLE_FILTERS } from "@/lib/art-styles";
 import PhotoUploader from "@/components/art/PhotoUploader";
 import StyleSelector from "@/components/art/StyleSelector";
 import ConfirmGenerate from "@/components/art/ConfirmGenerate";
-import ConvertAnimation from "@/components/art/ConvertAnimation";
+import ConvertAnimation, { type ArtErrorReason } from "@/components/art/ConvertAnimation";
 import ArtResult from "@/components/art/ArtResult";
 
 type Step = "upload" | "style" | "confirm" | "converting" | "result";
@@ -18,6 +18,7 @@ export default function ArtTryPage() {
   const [petName, setPetName] = useState("");
   const [styleId, setStyleId] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<ArtErrorReason | null>(null);
 
   const stepNumber = step === "upload" ? 1 : step === "style" ? 2 : 3;
   const showHeader = step !== "converting" && step !== "result";
@@ -29,11 +30,13 @@ export default function ArtTryPage() {
   const handleRetry = () => {
     setStyleId(null);
     setGeneratedImage(null);
+    setErrorReason(null);
     setStep("style");
   };
 
-  const handleConversionComplete = (imageUrl: string | null) => {
+  const handleConversionComplete = (imageUrl: string | null, reason: ArtErrorReason | null) => {
     setGeneratedImage(imageUrl);
+    setErrorReason(reason);
     setStep("result");
   };
 
@@ -163,6 +166,7 @@ export default function ArtTryPage() {
             <ArtResult
               photo={photo}
               generatedImage={generatedImage}
+              errorReason={errorReason}
               styleFilter={selectedStyle.filter}
               styleName={selectedStyle.name}
               styleEmoji={selectedStyle.emoji}

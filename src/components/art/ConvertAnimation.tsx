@@ -13,13 +13,15 @@ const STATUS_TEXTS = [
   { at: 8000, text: "仕上げています" },
 ];
 
+export type ArtErrorReason = "not_configured" | "invalid_photo" | "generation_failed";
+
 interface ConvertAnimationProps {
   photo: string;
   styleName: string;
   styleFilter: string;
   petName: string;
   styleId: string;
-  onComplete: (generatedImage: string | null) => void;
+  onComplete: (generatedImage: string | null, errorReason: ArtErrorReason | null) => void;
 }
 
 export default function ConvertAnimation({
@@ -35,9 +37,14 @@ export default function ConvertAnimation({
   const [filterStrength, setFilterStrength] = useState(0);
 
   const completedRef = useRef(false);
-  const apiRef = useRef<{ done: boolean; imageUrl: string | null }>({
+  const apiRef = useRef<{
+    done: boolean;
+    imageUrl: string | null;
+    errorReason: ArtErrorReason | null;
+  }>({
     done: false,
     imageUrl: null,
+    errorReason: null,
   });
   const abortRef = useRef<AbortController | null>(null);
 
@@ -54,16 +61,21 @@ export default function ConvertAnimation({
           body: JSON.stringify({ photo, petName, styleId }),
           signal: controller.signal,
         });
-        const data = (await res.json()) as { success?: boolean; generatedImageUrl?: string | null };
+        const data = (await res.json()) as {
+          success?: boolean;
+          generatedImageUrl?: string | null;
+          errorReason?: ArtErrorReason;
+        };
         apiRef.current = {
           done: true,
           imageUrl: data.success ? (data.generatedImageUrl ?? null) : null,
+          errorReason: data.errorReason ?? null,
         };
       } catch (e) {
         if (!controller.signal.aborted) {
           console.error("[ConvertAnimation] API call failed:", e);
         }
-        apiRef.current = { done: true, imageUrl: null };
+        apiRef.current = { done: true, imageUrl: null, errorReason: "generation_failed" };
       }
     }
 
@@ -89,7 +101,7 @@ export default function ConvertAnimation({
         setStatusText("完成しました ✨");
         setFilterStrength(1);
         completedRef.current = true;
-        setTimeout(() => onComplete(apiRef.current.imageUrl), 800);
+        setTimeout(() => onComplete(apiRef.current.imageUrl, apiRef.current.errorReason), 800);
         return;
       }
 

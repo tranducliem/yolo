@@ -3,19 +3,28 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import type { ArtErrorReason } from "@/components/art/ConvertAnimation";
 
 interface ArtResultProps {
   photo: string;
   generatedImage: string | null; // AI-generated image; null = use CSS filter fallback
+  errorReason: ArtErrorReason | null;
   styleFilter: string;
   styleName: string;
   styleEmoji: string;
   onRetry: () => void;
 }
 
+const ERROR_MESSAGES: Record<ArtErrorReason, string> = {
+  not_configured: "AI生成サービスが未設定のため、フィルター表示中です",
+  invalid_photo: "写真の形式が読めなかったため、フィルター表示中です",
+  generation_failed: "AI生成に失敗しました。フィルターで表示しています",
+};
+
 export default function ArtResult({
   photo,
   generatedImage,
+  errorReason,
   styleFilter,
   styleName,
   styleEmoji,
@@ -100,6 +109,20 @@ export default function ArtResult({
           </h2>
           {hasRealImage && <p className="mt-1 text-[11px] text-gray-400">AI生成アート</p>}
         </motion.div>
+
+        {/* Fallback notice — shown when AI generation failed */}
+        {!hasRealImage && errorReason && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mx-auto mt-4 max-w-sm rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5"
+          >
+            <p className="text-center text-[11px] leading-relaxed text-amber-700">
+              ⚠️ {ERROR_MESSAGES[errorReason]}
+            </p>
+          </motion.div>
+        )}
 
         {/* Before / After comparison */}
         <motion.div

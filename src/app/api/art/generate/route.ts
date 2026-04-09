@@ -3,6 +3,10 @@ import { ART_STYLES, STYLE_FILTERS, getMockComment } from "@/lib/art-styles";
 
 export const maxDuration = 60;
 
+// ── Types ───────────────────────────────────────────────────────────────────
+
+type ErrorReason = "not_configured" | "invalid_photo" | "generation_failed";
+
 interface GenerateResponse {
   success: boolean;
   mode: "generated" | "mock";
@@ -11,9 +15,35 @@ interface GenerateResponse {
   comment: string;
   styleId: string;
   styleName: string;
+  errorReason?: ErrorReason;
 }
 
-function mockResult(styleId: string, styleName: string, name: string): NextResponse {
+interface ImagenPrediction {
+  bytesBase64Encoded?: string;
+  mimeType?: string;
+  image?: { imageBytes?: string; mimeType?: string };
+}
+
+interface ImagenResponse {
+  predictions?: ImagenPrediction[];
+  generatedImages?: Array<{ image?: { imageBytes?: string; mimeType?: string } }>;
+  error?: { code?: number; message?: string; status?: string };
+}
+
+interface ProxyResponse {
+  success: boolean;
+  result?: string;
+  error?: string;
+}
+
+// ── Mock fallback ───────────────────────────────────────────────────────────
+
+function mockResult(
+  styleId: string,
+  styleName: string,
+  name: string,
+  errorReason?: ErrorReason,
+): NextResponse {
   return NextResponse.json<GenerateResponse>({
     success: true,
     mode: "mock",
@@ -22,8 +52,11 @@ function mockResult(styleId: string, styleName: string, name: string): NextRespo
     comment: getMockComment(styleId, name),
     styleId,
     styleName,
+    ...(errorReason ? { errorReason } : {}),
   });
 }
+
+// ── Route handler ───────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   let parsedStyleId = "ghibli";
@@ -58,18 +91,20 @@ export async function POST(request: NextRequest) {
     const googleModel = process.env.GOOGLE_AI_MODEL;
     const googleBaseUrl =
       process.env.GOOGLE_AI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta";
+    const googleRatio = process.env.GOOGLE_AI_RATIO || "1:1";
+    const googleSize = process.env.GOOGLE_AI_SIZE || "2K";
     const timeoutMs = parseInt(process.env.GOOGLE_AI_TIMEOUT || "120") * 1000;
 
     if (!googleApiKey || !googleModel) {
       console.log("[art/generate] No Google AI config — returning mock result");
-      return mockResult(parsedStyleId, parsedStyleName, parsedName);
+      return mockResult(parsedStyleId, parsedStyleName, parsedName, "not_configured");
     }
 
     // Strip data URL prefix → pure base64 + mime type
     const base64Match = photo.match(/^data:([^;]+);base64,(.+)$/);
     if (!base64Match) {
       console.warn("[art/generate] Invalid photo format");
-      return mockResult(parsedStyleId, parsedStyleName, parsedName);
+      return mockResult(parsedStyleId, parsedStyleName, parsedName, "invalid_photo");
     }
     const mimeType = base64Match[1];
     const photoBase64 = base64Match[2];
@@ -88,26 +123,33 @@ export async function POST(request: NextRequest) {
     console.log("[art/generate] Imagen prompt:", prompt.slice(0, 120));
 
     // Step 3: Generate image with Google Imagen
-    const generatedBase64 = await generateWithImagen(
-      prompt,
-      googleApiKey,
-      googleModel,
-      googleBaseUrl,
-      timeoutMs,
-    );
+    try {
+      const generatedBase64 = await generateWithImagen({
+        prompt,
+        apiKey: googleApiKey,
+        model: googleModel,
+        baseUrl: googleBaseUrl,
+        aspectRatio: googleRatio,
+        sampleImageSize: googleSize,
+        timeoutMs,
+      });
 
-    return NextResponse.json<GenerateResponse>({
-      success: true,
-      mode: "generated",
-      generatedImageUrl: `data:image/jpeg;base64,${generatedBase64}`,
-      filterCSS: STYLE_FILTERS[parsedStyleId] || "",
-      comment: getMockComment(parsedStyleId, parsedName),
-      styleId: style.id,
-      styleName: style.name,
-    });
+      return NextResponse.json<GenerateResponse>({
+        success: true,
+        mode: "generated",
+        generatedImageUrl: `data:image/jpeg;base64,${generatedBase64}`,
+        filterCSS: STYLE_FILTERS[parsedStyleId] || "",
+        comment: getMockComment(parsedStyleId, parsedName),
+        styleId: style.id,
+        styleName: style.name,
+      });
+    } catch (genError) {
+      console.error("[art/generate] Imagen generation failed:", genError);
+      return mockResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
+    }
   } catch (error: unknown) {
     console.error("[art/generate] Error:", error);
-    return mockResult(parsedStyleId, parsedStyleName, parsedName);
+    return mockResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
   }
 }
 
@@ -146,7 +188,7 @@ async function describePetForArt(
     signal: AbortSignal.timeout(30000),
   });
 
-  const data = (await response.json()) as { success: boolean; result?: string; error?: string };
+  const data = (await response.json()) as ProxyResponse;
   if (!data.success) throw new Error(`Proxy error: ${data.error}`);
 
   return (data.result || "").trim().slice(0, 300);
@@ -169,13 +211,18 @@ function buildGenerationPrompt(
 
 // ── Step 3: Call Google Imagen API ──────────────────────────────────────────
 
-async function generateWithImagen(
-  prompt: string,
-  apiKey: string,
-  model: string,
-  baseUrl: string,
-  timeoutMs: number,
-): Promise<string> {
+interface ImagenGenerateParams {
+  prompt: string;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  aspectRatio: string;
+  sampleImageSize: string;
+  timeoutMs: number;
+}
+
+async function generateWithImagen(params: ImagenGenerateParams): Promise<string> {
+  const { prompt, apiKey, model, baseUrl, aspectRatio, sampleImageSize, timeoutMs } = params;
   const url = `${baseUrl}/models/${model}:predict`;
 
   const response = await fetch(url, {
@@ -188,7 +235,8 @@ async function generateWithImagen(
       instances: [{ prompt }],
       parameters: {
         sampleCount: 1,
-        aspectRatio: "1:1",
+        aspectRatio,
+        sampleImageSize,
       },
     }),
     signal: AbortSignal.timeout(timeoutMs),
@@ -200,13 +248,17 @@ async function generateWithImagen(
     throw new Error(`Imagen API ${response.status}`);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = (await response.json()) as Record<string, any>;
+  const data = (await response.json()) as ImagenResponse;
 
   // Handle multiple possible response formats across Imagen versions
-  if (data.generatedImages?.[0]?.image?.imageBytes) return data.generatedImages[0].image.imageBytes;
-  if (data.predictions?.[0]?.bytesBase64Encoded) return data.predictions[0].bytesBase64Encoded;
-  if (data.predictions?.[0]?.image?.imageBytes) return data.predictions[0].image.imageBytes;
+  const generatedImageBytes = data.generatedImages?.[0]?.image?.imageBytes;
+  if (generatedImageBytes) return generatedImageBytes;
+
+  const predictionBase64 = data.predictions?.[0]?.bytesBase64Encoded;
+  if (predictionBase64) return predictionBase64;
+
+  const predictionImageBytes = data.predictions?.[0]?.image?.imageBytes;
+  if (predictionImageBytes) return predictionImageBytes;
 
   console.error("[art/generate] Unknown Imagen response:", JSON.stringify(data).slice(0, 300));
   throw new Error("No image data in Imagen response");
