@@ -6,6 +6,7 @@ export const maxDuration = 60;
 // ── Types ───────────────────────────────────────────────────────────────────
 
 type ErrorReason = "not_configured" | "invalid_photo" | "generation_failed";
+type Provider = "GOOGLE" | "GROK" | "MOCK";
 
 interface GenerateResponse {
   success: boolean;
@@ -30,19 +31,29 @@ interface ImagenResponse {
   error?: { code?: number; message?: string; status?: string };
 }
 
+interface GrokImageData {
+  b64_json?: string;
+  url?: string;
+}
+
+interface GrokResponse {
+  data?: GrokImageData[];
+  error?: { message?: string; type?: string };
+}
+
 interface ProxyResponse {
   success: boolean;
   result?: string;
   error?: string;
 }
 
-// ── Mock fallback ───────────────────────────────────────────────────────────
+// ── Mock fallback (error case) ───────────────────────────────────────────────
 
-function mockResult(
+function errorResult(
   styleId: string,
   styleName: string,
   name: string,
-  errorReason?: ErrorReason,
+  errorReason: ErrorReason,
 ): NextResponse {
   return NextResponse.json<GenerateResponse>({
     success: true,
@@ -52,7 +63,7 @@ function mockResult(
     comment: getMockComment(styleId, name),
     styleId,
     styleName,
-    ...(errorReason ? { errorReason } : {}),
+    errorReason,
   });
 }
 
@@ -87,6 +98,82 @@ export async function POST(request: NextRequest) {
     parsedStyleName = style.name;
     parsedName = petName || "ペット";
 
+    // Strip data URL prefix → pure base64 + mime type
+    const base64Match = photo.match(/^data:([^;]+);base64,(.+)$/);
+    if (!base64Match) {
+      console.warn("[art/generate] Invalid photo format");
+      return errorResult(parsedStyleId, parsedStyleName, parsedName, "invalid_photo");
+    }
+    const mimeType = base64Match[1];
+    const photoBase64 = base64Match[2];
+
+    const provider = (process.env.ART_SERVICE_PROVIDER || "GOOGLE").toUpperCase() as Provider;
+    console.log(`[art/generate] Provider: ${provider}`);
+
+    // ── MOCK provider ──────────────────────────────────────────────────────
+    if (provider === "MOCK") {
+      const delay = 1000 + Math.random() * 1000; // 1–2s
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return NextResponse.json<GenerateResponse>({
+        success: true,
+        mode: "mock",
+        generatedImageUrl: `data:${mimeType};base64,${photoBase64}`,
+        filterCSS: STYLE_FILTERS[parsedStyleId] || "",
+        comment: getMockComment(parsedStyleId, parsedName),
+        styleId: style.id,
+        styleName: style.name,
+      });
+    }
+
+    // ── GROK provider ──────────────────────────────────────────────────────
+    if (provider === "GROK") {
+      const grokApiKey = process.env.GROK_API_KEY;
+      const grokModel = process.env.GROK_MODEL || "grok-2-image-1212";
+      const grokBaseUrl = process.env.GROK_BASE_URL || "https://api.x.ai/v1";
+      const grokTimeout = parseInt(process.env.GROK_TIMEOUT || "60") * 1000;
+
+      if (!grokApiKey) {
+        console.log("[art/generate] No Grok API key — returning error result");
+        return errorResult(parsedStyleId, parsedStyleName, parsedName, "not_configured");
+      }
+
+      // Step 1: Describe pet (optional, best-effort)
+      let petDescription = "";
+      try {
+        petDescription = await describePetForArt(photoBase64, mimeType, parsedName);
+        console.log("[art/generate] Pet description:", petDescription.slice(0, 100));
+      } catch (e) {
+        console.warn("[art/generate] Pet description failed, using generic prompt:", e);
+      }
+
+      const prompt = buildGenerationPrompt(style.prompt, style.nameEn, parsedName, petDescription);
+      console.log("[art/generate] Grok prompt:", prompt.slice(0, 120));
+
+      try {
+        const generatedBase64 = await generateWithGrok({
+          prompt,
+          apiKey: grokApiKey,
+          model: grokModel,
+          baseUrl: grokBaseUrl,
+          timeoutMs: grokTimeout,
+        });
+
+        return NextResponse.json<GenerateResponse>({
+          success: true,
+          mode: "generated",
+          generatedImageUrl: `data:image/jpeg;base64,${generatedBase64}`,
+          filterCSS: STYLE_FILTERS[parsedStyleId] || "",
+          comment: getMockComment(parsedStyleId, parsedName),
+          styleId: style.id,
+          styleName: style.name,
+        });
+      } catch (genError) {
+        console.error("[art/generate] Grok generation failed:", genError);
+        return errorResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
+      }
+    }
+
+    // ── GOOGLE provider (default) ──────────────────────────────────────────
     const googleApiKey = process.env.GOOGLE_AI_API_KEY;
     const googleModel = process.env.GOOGLE_AI_MODEL;
     const googleBaseUrl =
@@ -96,20 +183,11 @@ export async function POST(request: NextRequest) {
     const timeoutMs = parseInt(process.env.GOOGLE_AI_TIMEOUT || "120") * 1000;
 
     if (!googleApiKey || !googleModel) {
-      console.log("[art/generate] No Google AI config — returning mock result");
-      return mockResult(parsedStyleId, parsedStyleName, parsedName, "not_configured");
+      console.log("[art/generate] No Google AI config — returning error result");
+      return errorResult(parsedStyleId, parsedStyleName, parsedName, "not_configured");
     }
 
-    // Strip data URL prefix → pure base64 + mime type
-    const base64Match = photo.match(/^data:([^;]+);base64,(.+)$/);
-    if (!base64Match) {
-      console.warn("[art/generate] Invalid photo format");
-      return mockResult(parsedStyleId, parsedStyleName, parsedName, "invalid_photo");
-    }
-    const mimeType = base64Match[1];
-    const photoBase64 = base64Match[2];
-
-    // Step 1: Describe the pet via Claude proxy (improves Imagen prompt quality)
+    // Step 1: Describe pet (optional, best-effort)
     let petDescription = "";
     try {
       petDescription = await describePetForArt(photoBase64, mimeType, parsedName);
@@ -118,11 +196,9 @@ export async function POST(request: NextRequest) {
       console.warn("[art/generate] Pet description failed, using generic prompt:", e);
     }
 
-    // Step 2: Build generation prompt
     const prompt = buildGenerationPrompt(style.prompt, style.nameEn, parsedName, petDescription);
     console.log("[art/generate] Imagen prompt:", prompt.slice(0, 120));
 
-    // Step 3: Generate image with Google Imagen
     try {
       const generatedBase64 = await generateWithImagen({
         prompt,
@@ -145,11 +221,11 @@ export async function POST(request: NextRequest) {
       });
     } catch (genError) {
       console.error("[art/generate] Imagen generation failed:", genError);
-      return mockResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
+      return errorResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
     }
   } catch (error: unknown) {
     console.error("[art/generate] Error:", error);
-    return mockResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
+    return errorResult(parsedStyleId, parsedStyleName, parsedName, "generation_failed");
   }
 }
 
@@ -194,7 +270,7 @@ async function describePetForArt(
   return (data.result || "").trim().slice(0, 300);
 }
 
-// ── Step 2: Build Imagen prompt ─────────────────────────────────────────────
+// ── Step 2: Build generation prompt ─────────────────────────────────────────
 
 function buildGenerationPrompt(
   stylePrompt: string,
@@ -209,7 +285,7 @@ function buildGenerationPrompt(
   return `${stylePrompt}. ${subject}. Create a beautiful ${styleNameEn} artwork portrait with the pet as the central focus, detailed and expressive. High quality illustration.`;
 }
 
-// ── Step 3: Call Google Imagen API ──────────────────────────────────────────
+// ── Google Imagen ────────────────────────────────────────────────────────────
 
 interface ImagenGenerateParams {
   prompt: string;
@@ -250,7 +326,6 @@ async function generateWithImagen(params: ImagenGenerateParams): Promise<string>
 
   const data = (await response.json()) as ImagenResponse;
 
-  // Handle multiple possible response formats across Imagen versions
   const generatedImageBytes = data.generatedImages?.[0]?.image?.imageBytes;
   if (generatedImageBytes) return generatedImageBytes;
 
@@ -262,4 +337,48 @@ async function generateWithImagen(params: ImagenGenerateParams): Promise<string>
 
   console.error("[art/generate] Unknown Imagen response:", JSON.stringify(data).slice(0, 300));
   throw new Error("No image data in Imagen response");
+}
+
+// ── Grok (xAI) image generation ──────────────────────────────────────────────
+
+interface GrokGenerateParams {
+  prompt: string;
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  timeoutMs: number;
+}
+
+async function generateWithGrok(params: GrokGenerateParams): Promise<string> {
+  const { prompt, apiKey, model, baseUrl, timeoutMs } = params;
+  const url = `${baseUrl}/images/generations`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      prompt,
+      n: 1,
+      response_format: "b64_json",
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("[art/generate] Grok API error:", response.status, errText.slice(0, 300));
+    throw new Error(`Grok API ${response.status}`);
+  }
+
+  const data = (await response.json()) as GrokResponse;
+
+  const b64 = data.data?.[0]?.b64_json;
+  if (b64) return b64;
+
+  console.error("[art/generate] Unknown Grok response:", JSON.stringify(data).slice(0, 300));
+  throw new Error("No image data in Grok response");
 }
