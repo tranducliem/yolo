@@ -6,6 +6,7 @@ import Link from "next/link";
 
 interface ArtResultProps {
   photo: string;
+  generatedImage: string | null; // AI-generated image; null = use CSS filter fallback
   styleFilter: string;
   styleName: string;
   styleEmoji: string;
@@ -14,6 +15,7 @@ interface ArtResultProps {
 
 export default function ArtResult({
   photo,
+  generatedImage,
   styleFilter,
   styleName,
   styleEmoji,
@@ -23,12 +25,24 @@ export default function ArtResult({
   const [showSparkles, setShowSparkles] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  const hasRealImage = !!generatedImage;
+
   useEffect(() => {
     const t = setTimeout(() => setShowSparkles(false), 2500);
     return () => clearTimeout(t);
   }, []);
 
   const handleDownload = useCallback(() => {
+    // If we have a real generated image, download it directly
+    if (generatedImage) {
+      const link = document.createElement("a");
+      link.download = `yolo-art-${styleName}.jpg`;
+      link.href = generatedImage;
+      link.click();
+      return;
+    }
+
+    // Fallback: use canvas to apply CSS filter to original
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -47,7 +61,7 @@ export default function ArtResult({
       link.click();
     };
     img.src = photo;
-  }, [photo, styleFilter, styleName]);
+  }, [generatedImage, photo, styleFilter, styleName]);
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -70,9 +84,7 @@ export default function ArtResult({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#FDF8F0] to-white">
-      {/* Sparkles */}
       {showSparkles && <SparkleOverlay />}
-
       <canvas ref={canvasRef} className="hidden" />
 
       <div className="px-5 pt-8 pb-12">
@@ -86,9 +98,10 @@ export default function ArtResult({
           <h2 className="mt-1 text-lg font-bold">
             {styleEmoji} {styleName}スタイル
           </h2>
+          {hasRealImage && <p className="mt-1 text-[11px] text-gray-400">AI生成アート</p>}
         </motion.div>
 
-        {/* Before / After slider */}
+        {/* Before / After comparison */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -96,21 +109,31 @@ export default function ArtResult({
           className="relative mx-auto mt-6 max-w-sm overflow-hidden rounded-2xl shadow-lg"
           style={{ aspectRatio: "1" }}
         >
-          {/* Before (original) */}
+          {/* Before — original photo */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={photo} alt="Before" className="absolute inset-0 h-full w-full object-cover" />
-          {/* After (filtered) */}
+
+          {/* After — real generated image or CSS filter fallback */}
           <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={photo}
-              alt="After"
-              className="h-full w-full object-cover"
-              style={{ filter: styleFilter }}
-            />
+            {hasRealImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={generatedImage}
+                alt={`${styleName}スタイル`}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={photo}
+                alt={`${styleName}スタイル`}
+                className="h-full w-full object-cover"
+                style={{ filter: styleFilter }}
+              />
+            )}
           </div>
 
-          {/* Divider */}
+          {/* Divider handle */}
           <div className="pointer-events-none absolute inset-y-0" style={{ left: `${slider}%` }}>
             <div className="h-full w-0.5 bg-white shadow-lg" />
             <div className="text-accent absolute top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-[10px] font-bold shadow-lg">
@@ -126,7 +149,7 @@ export default function ArtResult({
             After
           </div>
 
-          {/* Range input */}
+          {/* Range slider */}
           <input
             type="range"
             min="0"
@@ -158,7 +181,6 @@ export default function ArtResult({
             />
             <ProductCard title="アクリルスタンド" desc="卓上サイズ (10cm)" price="¥1,980" />
 
-            {/* Donation badge */}
             <div className="flex items-center gap-2 rounded-xl bg-emerald-50 p-3">
               <span className="text-lg">🌟</span>
               <p className="text-[11px] font-medium text-emerald-700">

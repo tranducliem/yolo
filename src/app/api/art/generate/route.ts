@@ -3,10 +3,40 @@ import { ART_STYLES, STYLE_FILTERS, getMockComment } from "@/lib/art-styles";
 
 export const maxDuration = 60;
 
+interface GenerateResponse {
+  success: boolean;
+  mode: "generated" | "mock";
+  generatedImageUrl: string | null;
+  filterCSS: string;
+  comment: string;
+  styleId: string;
+  styleName: string;
+}
+
+function mockResult(styleId: string, styleName: string, name: string): NextResponse {
+  return NextResponse.json<GenerateResponse>({
+    success: true,
+    mode: "mock",
+    generatedImageUrl: null,
+    filterCSS: STYLE_FILTERS[styleId] || "saturate(1.3) contrast(1.2)",
+    comment: getMockComment(styleId, name),
+    styleId,
+    styleName,
+  });
+}
+
 export async function POST(request: NextRequest) {
+  let parsedStyleId = "ghibli";
+  let parsedStyleName = "アート";
+  let parsedName = "ペット";
+
   try {
     const body = await request.json();
-    const { petName, photo, styleId } = body;
+    const { petName, photo, styleId } = body as {
+      petName?: string;
+      photo?: string;
+      styleId?: string;
+    };
 
     if (!photo || !styleId) {
       return NextResponse.json(
@@ -20,116 +50,164 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Invalid styleId" }, { status: 400 });
     }
 
-    const name = petName || "ペット";
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    parsedStyleId = styleId;
+    parsedStyleName = style.name;
+    parsedName = petName || "ペット";
 
-    if (!apiKey) {
-      console.log("No ANTHROPIC_API_KEY — returning mock art result");
-      return NextResponse.json({
-        success: true,
-        mode: "mock",
-        filterCSS: STYLE_FILTERS[styleId] || "saturate(1.3) contrast(1.2)",
-        breed: "犬",
-        species: "dog",
-        comment: getMockComment(styleId, name),
-        styleId: style.id,
-        styleName: style.name,
-      });
+    const googleApiKey = process.env.GOOGLE_AI_API_KEY;
+    const googleModel = process.env.GOOGLE_AI_MODEL;
+    const googleBaseUrl =
+      process.env.GOOGLE_AI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta";
+    const timeoutMs = parseInt(process.env.GOOGLE_AI_TIMEOUT || "120") * 1000;
+
+    if (!googleApiKey || !googleModel) {
+      console.log("[art/generate] No Google AI config — returning mock result");
+      return mockResult(parsedStyleId, parsedStyleName, parsedName);
     }
 
-    // Step 1: Claude Vision APIで写真の内容を記述
-    const description = await describeWithClaude(photo, name, style.name, apiKey);
+    // Strip data URL prefix → pure base64 + mime type
+    const base64Match = photo.match(/^data:([^;]+);base64,(.+)$/);
+    if (!base64Match) {
+      console.warn("[art/generate] Invalid photo format");
+      return mockResult(parsedStyleId, parsedStyleName, parsedName);
+    }
+    const mimeType = base64Match[1];
+    const photoBase64 = base64Match[2];
 
-    // Phase 1: 画像生成APIは未接続 → フィルター情報を返す
-    return NextResponse.json({
+    // Step 1: Describe the pet via Claude proxy (improves Imagen prompt quality)
+    let petDescription = "";
+    try {
+      petDescription = await describePetForArt(photoBase64, mimeType, parsedName);
+      console.log("[art/generate] Pet description:", petDescription.slice(0, 100));
+    } catch (e) {
+      console.warn("[art/generate] Pet description failed, using generic prompt:", e);
+    }
+
+    // Step 2: Build generation prompt
+    const prompt = buildGenerationPrompt(style.prompt, style.nameEn, parsedName, petDescription);
+    console.log("[art/generate] Imagen prompt:", prompt.slice(0, 120));
+
+    // Step 3: Generate image with Google Imagen
+    const generatedBase64 = await generateWithImagen(
+      prompt,
+      googleApiKey,
+      googleModel,
+      googleBaseUrl,
+      timeoutMs,
+    );
+
+    return NextResponse.json<GenerateResponse>({
       success: true,
-      mode: "mock",
-      filterCSS: STYLE_FILTERS[styleId] || "saturate(1.3) contrast(1.2)",
-      breed: description.breed,
-      species: description.species,
-      comment: description.comment,
+      mode: "generated",
+      generatedImageUrl: `data:image/jpeg;base64,${generatedBase64}`,
+      filterCSS: STYLE_FILTERS[parsedStyleId] || "",
+      comment: getMockComment(parsedStyleId, parsedName),
       styleId: style.id,
       styleName: style.name,
     });
   } catch (error: unknown) {
-    console.error("Art generate error:", error);
-    const styleId = "ghibli";
-    return NextResponse.json({
-      success: true,
-      mode: "mock",
-      filterCSS: STYLE_FILTERS[styleId],
-      breed: "犬",
-      species: "dog",
-      comment: getMockComment(styleId, "ペット"),
-      styleId,
-      styleName: "ジブリ風",
-    });
+    console.error("[art/generate] Error:", error);
+    return mockResult(parsedStyleId, parsedStyleName, parsedName);
   }
 }
 
-async function describeWithClaude(
+// ── Step 1: Describe pet using Claude Vision via proxy ──────────────────────
+
+async function describePetForArt(
   photoBase64: string,
+  mimeType: string,
   petName: string,
-  styleName: string,
-  apiKey: string,
-): Promise<{ description: string; breed: string; species: string; comment: string }> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+): Promise<string> {
+  const proxyUrl = process.env.PROXY_URL;
+  const proxyApiKey = process.env.PROXY_API_KEY;
+
+  if (!proxyUrl || !proxyApiKey) throw new Error("Proxy not configured");
+
+  const response = await fetch(`${proxyUrl}/v1/query`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${proxyApiKey}`,
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      messages: [
+      content: [
         {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: "image/jpeg",
-                data: photoBase64,
-              },
-            },
-            {
-              type: "text",
-              text: `あなたはペット写真の専門家です。
-この写真に写っているペットの外見を詳細に記述してください。
-
-以下を含めてください:
-- 種類（犬/猫）と推定される犬種/猫種
-- 毛の色、模様、長さ
-- 体のポーズ、向き
-- 表情（目、口、耳の状態）
-- 背景の環境
-- 光の方向と強さ
-- 全体的な雰囲気
-
-また、このイラスト化作品に付けるAIコメントを日本語で80-120文字で生成してください。
-ペット名は「${petName}」です。スタイルは「${styleName}」です。
-コメントはスタイルの世界観に合わせて、飼い主が感動するような文章にしてください。
-
-JSON形式のみで出力:
-{"description":"A cream-colored Pomeranian with fluffy fur...","breed":"ポメラニアン","species":"dog","comment":"ジブリの世界に飛び込んだ${petName}。風に揺れる..."}`,
-            },
-          ],
+          type: "image",
+          source: { type: "base64", media_type: mimeType, data: photoBase64 },
+        },
+        {
+          type: "text",
+          text: `Describe this pet photo concisely for an AI image generation prompt. Include: species (dog/cat/etc), breed, main fur colors, pattern, body size, approximate age, and notable features like ear shape or eye color. Pet name: "${petName}". Respond in ONE paragraph of plain English, max 80 words. No introduction.`,
         },
       ],
+      options: { maxTurns: 1 },
+      clientId: "yolo-art",
     }),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  const data = (await response.json()) as { success: boolean; result?: string; error?: string };
+  if (!data.success) throw new Error(`Proxy error: ${data.error}`);
+
+  return (data.result || "").trim().slice(0, 300);
+}
+
+// ── Step 2: Build Imagen prompt ─────────────────────────────────────────────
+
+function buildGenerationPrompt(
+  stylePrompt: string,
+  styleNameEn: string,
+  petName: string,
+  petDescription: string,
+): string {
+  const subject = petDescription
+    ? `The main subject is a pet named ${petName}: ${petDescription}`
+    : `The main subject is a cute pet named ${petName}`;
+
+  return `${stylePrompt}. ${subject}. Create a beautiful ${styleNameEn} artwork portrait with the pet as the central focus, detailed and expressive. High quality illustration.`;
+}
+
+// ── Step 3: Call Google Imagen API ──────────────────────────────────────────
+
+async function generateWithImagen(
+  prompt: string,
+  apiKey: string,
+  model: string,
+  baseUrl: string,
+  timeoutMs: number,
+): Promise<string> {
+  const url = `${baseUrl}/models/${model}:predict`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      instances: [{ prompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: "1:1",
+      },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!response.ok) {
-    throw new Error(`Claude API: ${response.status}`);
+    const errText = await response.text();
+    console.error("[art/generate] Imagen API error:", response.status, errText.slice(0, 300));
+    throw new Error(`Imagen API ${response.status}`);
   }
 
-  const data = await response.json();
-  const text = data.content?.[0]?.text || "";
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("JSON parse failed");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (await response.json()) as Record<string, any>;
 
-  return JSON.parse(jsonMatch[0]);
+  // Handle multiple possible response formats across Imagen versions
+  if (data.generatedImages?.[0]?.image?.imageBytes) return data.generatedImages[0].image.imageBytes;
+  if (data.predictions?.[0]?.bytesBase64Encoded) return data.predictions[0].bytesBase64Encoded;
+  if (data.predictions?.[0]?.image?.imageBytes) return data.predictions[0].image.imageBytes;
+
+  console.error("[art/generate] Unknown Imagen response:", JSON.stringify(data).slice(0, 300));
+  throw new Error("No image data in Imagen response");
 }

@@ -17,6 +17,7 @@ export default function ArtTryPage() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [petName, setPetName] = useState("");
   const [styleId, setStyleId] = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
 
   const stepNumber = step === "upload" ? 1 : step === "style" ? 2 : 3;
   const showHeader = step !== "converting" && step !== "result";
@@ -27,7 +28,13 @@ export default function ArtTryPage() {
 
   const handleRetry = () => {
     setStyleId(null);
+    setGeneratedImage(null);
     setStep("style");
+  };
+
+  const handleConversionComplete = (imageUrl: string | null) => {
+    setGeneratedImage(imageUrl);
+    setStep("result");
   };
 
   return (
@@ -125,8 +132,8 @@ export default function ArtTryPage() {
           </motion.div>
         )}
 
-        {/* 変換アニメーション */}
-        {step === "converting" && photo && selectedStyle && (
+        {/* 変換アニメーション (+ API call) */}
+        {step === "converting" && photo && selectedStyle && styleId && (
           <motion.div
             key="converting"
             initial={{ opacity: 0 }}
@@ -138,7 +145,9 @@ export default function ArtTryPage() {
               photo={photo}
               styleName={selectedStyle.name}
               styleFilter={selectedStyle.filter}
-              onComplete={() => setStep("result")}
+              petName={petName || "ペット"}
+              styleId={styleId}
+              onComplete={handleConversionComplete}
             />
           </motion.div>
         )}
@@ -153,6 +162,7 @@ export default function ArtTryPage() {
           >
             <ArtResult
               photo={photo}
+              generatedImage={generatedImage}
               styleFilter={selectedStyle.filter}
               styleName={selectedStyle.name}
               styleEmoji={selectedStyle.emoji}
